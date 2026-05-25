@@ -1,0 +1,319 @@
+'use client';
+
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Columns2, Copy, GripVertical, Square, Trash2 } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import type { Field, FieldStyle, MultilingualText } from '@/types';
+import { cn } from '@/lib/utils';
+import { FIELD_META } from '@/lib/field-meta';
+import { AutoTextarea } from '@/components/ui/AutoTextarea';
+import { Switch } from '@/components/ui/Switch';
+import { FieldRenderer } from './FieldRenderer';
+import { EditableOptions } from './EditableOptions';
+import { EditableMatrix } from './EditableMatrix';
+
+interface Props {
+  field: Field;
+  index: number;
+  selected: boolean;
+  /** Style global appliqué à toutes les questions (depuis form.theme.field_style). */
+  globalStyle?: FieldStyle;
+  /** Couleur de fond du bloc (depuis form.theme.field_bg_color). */
+  cardBg?: string;
+  onSelect: () => void;
+  onChange: (patch: Partial<Field>) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}
+
+export function SortableFieldCard(props: Props) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.field.id
+  });
+
+  const width = props.field.layout_width ?? 'full';
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+    // Sur le grid 2-cols : full = span 2 (pleine largeur), half = span 1 (deux par ligne)
+    gridColumn: width === 'half' ? 'span 1 / span 1' : 'span 2 / span 2'
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn('min-w-0', isDragging && 'opacity-60')}>
+      <FieldCard
+        {...props}
+        dragHandleProps={{ ...attributes, ...listeners }}
+        isDragging={isDragging}
+      />
+    </div>
+  );
+}
+
+interface CardProps extends Props {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dragHandleProps?: any;
+  isDragging?: boolean;
+}
+
+const SIZE_CLASSES: Record<NonNullable<FieldStyle['label_size']>, string> = {
+  sm: 'text-sm',
+  md: 'text-base',
+  lg: 'text-lg',
+  xl: 'text-2xl'
+};
+
+const FONT_CLASSES: Record<NonNullable<FieldStyle['font_family']>, string> = {
+  sans: 'font-sans',
+  display: 'font-sans', // alias : 'display' était Georgia, désormais aligné sur Aktiv (Mooove)
+  serif: 'font-serif',
+  mono: 'font-mono'
+};
+
+const WEIGHT_CLASSES: Record<NonNullable<FieldStyle['label_weight']>, string> = {
+  normal: 'font-normal',
+  medium: 'font-medium',
+  bold: 'font-bold'
+};
+
+function FieldCard({
+  field,
+  index,
+  selected,
+  globalStyle,
+  cardBg,
+  onSelect,
+  onChange,
+  onDuplicate,
+  onDelete,
+  dragHandleProps,
+  isDragging
+}: CardProps) {
+  const meta = FIELD_META[field.type];
+  if (!meta) return null;
+  const Icon = meta.icon;
+  const isSectionBreak = field.type === 'section_break';
+  const isImage = field.type === 'image';
+  const isVideo = field.type === 'video';
+  const isStatement = field.type === 'statement';
+  const isLayout = isSectionBreak || isImage || isVideo;
+  const collectsAnswer = !isLayout && !isStatement;
+  const isChoiceLike =
+    field.type === 'single_choice' || field.type === 'multiple_choice' || field.type === 'dropdown';
+
+  function patchText(key: 'label' | 'description', value: string) {
+    const current = field[key] ?? ({} as MultilingualText);
+    onChange({ [key]: { ...current, fr: value } } as Partial<Field>);
+  }
+
+  // Résolution du style : par-champ override le global
+  const resolvedStyle: FieldStyle = { ...(globalStyle ?? {}), ...(field.style ?? {}) };
+  const labelSize = SIZE_CLASSES[resolvedStyle.label_size ?? 'lg'];
+  const labelFont = FONT_CLASSES[resolvedStyle.font_family ?? 'sans'];
+  const labelWeight = resolvedStyle.label_weight ? WEIGHT_CLASSES[resolvedStyle.label_weight] : '';
+  const labelClass = cn(labelSize, labelFont, labelWeight, resolvedStyle.label_italic && 'italic');
+  const labelInlineStyle: CSSProperties = {
+    color: resolvedStyle.label_color,
+    textAlign: resolvedStyle.label_align
+  };
+
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      style={{ backgroundColor: cardBg }}
+      className={cn(
+        'group relative cursor-pointer rounded-lg border px-5 pb-4 pt-3 transition',
+        cardBg ? '' : 'bg-bg-surface',
+        selected ? 'border-accent shadow-sm' : 'border-border hover:border-border-strong',
+        isDragging && 'shadow-xl'
+      )}
+    >
+      {/* Drag handle */}
+      <button
+        type="button"
+        {...dragHandleProps}
+        onClick={(e) => e.stopPropagation()}
+        className="absolute -left-7 top-1/2 -translate-y-1/2 cursor-grab rounded p-1 text-text-tertiary opacity-0 transition hover:bg-bg-elevated hover:text-text-primary group-hover:opacity-100 active:cursor-grabbing"
+        aria-label="Glisser pour réordonner"
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+
+      {/* TOOLBAR EN HAUT — type à gauche, actions à droite */}
+      <div
+        className="mb-2 flex items-center justify-between gap-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex min-w-0 items-center gap-1.5 text-xs uppercase tracking-wide text-text-tertiary">
+          <Icon className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{meta.label}</span>
+        </div>
+
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-0.5 transition',
+            selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          )}
+        >
+          <ToolbarButton
+            onClick={() =>
+              onChange({
+                layout_width: (field.layout_width ?? 'full') === 'half' ? 'full' : 'half'
+              })
+            }
+            label={
+              (field.layout_width ?? 'full') === 'half'
+                ? 'Passer en pleine largeur'
+                : 'Passer en demi-largeur (2 par ligne)'
+            }
+            active={(field.layout_width ?? 'full') === 'half'}
+          >
+            {(field.layout_width ?? 'full') === 'half' ? (
+              <Columns2 className="h-3.5 w-3.5" />
+            ) : (
+              <Square className="h-3.5 w-3.5" />
+            )}
+          </ToolbarButton>
+          <ToolbarButton onClick={onDuplicate} label="Dupliquer">
+            <Copy className="h-3.5 w-3.5" />
+          </ToolbarButton>
+          <ToolbarButton onClick={onDelete} label="Supprimer" danger>
+            <Trash2 className="h-3.5 w-3.5" />
+          </ToolbarButton>
+
+          {collectsAnswer && (
+            <>
+              <span className="mx-1 h-4 w-px bg-border" />
+              <span className="text-[11px] text-text-secondary">Obligatoire</span>
+              <Switch
+                checked={field.required}
+                onChange={(required) => onChange({ required })}
+              />
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Question — éditable inline (titre optionnel pour les statements) */}
+      {!isLayout ? (
+        <div className="mb-1.5 flex items-baseline gap-2">
+          {!isStatement && (
+            <span className="papyrus-numeral shrink-0 text-sm">{romanNumeral(index + 1)}.</span>
+          )}
+          <AutoTextarea
+            value={field.label.fr ?? ''}
+            onChange={(e) => patchText('label', e.target.value)}
+            placeholder={isStatement ? 'Titre (optionnel)' : 'Tapez votre question…'}
+            style={labelInlineStyle}
+            className={cn(
+              '-mx-1 min-w-0 flex-1 rounded bg-transparent px-1 leading-snug text-text-primary placeholder:text-text-tertiary focus:bg-bg-elevated/50 focus:outline-none',
+              labelClass
+            )}
+          />
+          {field.required && <span className="shrink-0 text-danger">*</span>}
+        </div>
+      ) : (
+        !isImage && !isVideo && (
+          <AutoTextarea
+            value={field.label.fr ?? ''}
+            onChange={(e) => patchText('label', e.target.value)}
+            placeholder={isSectionBreak ? 'Titre de la section' : 'Légende (optionnelle)'}
+            style={labelInlineStyle}
+            className={cn(
+              '-mx-1 mb-1.5 w-full rounded bg-transparent px-1 leading-snug text-text-primary placeholder:text-text-tertiary focus:bg-bg-elevated/50 focus:outline-none',
+              labelClass
+            )}
+          />
+        )
+      )}
+
+      {/* Description — éditable inline (pas pour section_break, image, vidéo) */}
+      {!isSectionBreak && !isImage && !isVideo && (
+        <AutoTextarea
+          value={field.description.fr ?? ''}
+          onChange={(e) => patchText('description', e.target.value)}
+          placeholder={isStatement ? 'Tapez votre texte…' : 'Description (optionnelle)'}
+          className="-mx-1 mb-2.5 w-full rounded bg-transparent px-1 text-sm italic text-text-secondary placeholder:text-text-tertiary placeholder:not-italic focus:bg-bg-elevated/50 focus:outline-none"
+        />
+      )}
+
+      {/* Aperçu — édition inline pour les choix et la matrice, sinon FieldRenderer en preview */}
+      {isSectionBreak ? (
+        <div className="papyrus-divider" />
+      ) : isStatement ? null : isChoiceLike ? (
+        <EditableOptions
+          type={field.type as 'single_choice' | 'multiple_choice' | 'dropdown'}
+          field={field}
+          onChange={onChange}
+        />
+      ) : field.type === 'matrix' ? (
+        <EditableMatrix field={field} onChange={onChange} />
+      ) : (
+        <FieldRenderer field={field} preview />
+      )}
+    </div>
+  );
+}
+
+function ToolbarButton({
+  children,
+  onClick,
+  label,
+  danger,
+  active
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  label: string;
+  danger?: boolean;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      aria-label={label}
+      title={label}
+      className={cn(
+        'rounded p-1.5 transition',
+        active
+          ? 'bg-accent/10 text-accent'
+          : danger
+            ? 'text-text-tertiary hover:bg-danger/10 hover:text-danger'
+            : 'text-text-tertiary hover:bg-bg-elevated hover:text-text-primary'
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function romanNumeral(n: number): string {
+  const lookup: [number, string][] = [
+    [50, 'l'],
+    [40, 'xl'],
+    [10, 'x'],
+    [9, 'ix'],
+    [5, 'v'],
+    [4, 'iv'],
+    [1, 'i']
+  ];
+  let result = '';
+  let remaining = n;
+  for (const [val, sym] of lookup) {
+    while (remaining >= val) {
+      result += sym;
+      remaining -= val;
+    }
+  }
+  return result;
+}

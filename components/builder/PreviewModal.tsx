@@ -1,0 +1,646 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, ArrowRight, Monitor, Smartphone, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import type { Field, FieldStyle, Form } from '@/types';
+import { FieldRenderer } from './FieldRenderer';
+import { FormHeader } from './FormHeader';
+import { SaveResumeBar } from './SaveResumeBar';
+import { getBackgroundStyle, getBannerStyle } from '@/lib/theme';
+import { buildPages } from '@/lib/sections';
+import { cn } from '@/lib/utils';
+
+interface Props {
+  form: Form;
+  onClose: () => void;
+}
+
+type Device = 'desktop' | 'mobile';
+
+export function PreviewModal({ form, onClose }: Props) {
+  const [device, setDevice] = useState<Device>('desktop');
+  const mode = form.display_mode ?? 'sections';
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') handleClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  function handleClose() {
+    onClose();
+  }
+
+  // Propage l'accent du formulaire à toute la modale via une variable CSS — les
+  // classes Tailwind `text-accent`, `border-accent`, `bg-accent`, etc. la lisent.
+  const accentStyle = { '--accent': form.theme.accent } as React.CSSProperties;
+
+  return (
+    <div className="absolute inset-0 flex flex-col overflow-hidden isolate" style={{ background: 'var(--papyrus-bg)', ...accentStyle }}>
+
+      {/* Toolbar bien positionnée avec z-index prioritaire et safe zone */}
+      <div className="relative z-[100] w-full" style={{ boxSizing: 'border-box' }}>
+        <PreviewToolbar form={form} device={device} setDevice={setDevice} onClose={handleClose} />
+      </div>
+
+      {/* Animation du parchemin pour le contenu seulement - isolation du stacking context */}
+      <div
+        className="flex h-full w-full flex-1 flex-col relative z-0"
+        style={{ transformOrigin: 'top center' }}
+      >
+        {form.save_and_resume && <SaveResumeBar formId={form.id} containerRef={contentRef} />}
+        <div ref={contentRef} className="flex-1 overflow-y-auto" style={getBackgroundStyle(form.theme)}>
+          {mode === 'sections' ? (
+            <SectionsPreview form={form} device={device} />
+          ) : mode === 'typeform' ? (
+            <TypeformPreview form={form} device={device} />
+          ) : (
+            <ScrollPreview form={form} device={device} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Toolbar
+// ============================================================================
+
+function PreviewToolbar({
+  form,
+  device,
+  setDevice,
+  onClose
+}: {
+  form: Form;
+  device: Device;
+  setDevice: (d: Device) => void;
+  onClose: () => void;
+}) {
+  const mode = form.display_mode ?? 'sections';
+  const modeLabel =
+    mode === 'sections' ? 'Pages' : mode === 'typeform' ? 'Une à une' : 'Défilement';
+
+  return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid var(--border)', background:'var(--bg-surface)', padding:'0 24px', minHeight:'3.5rem' }}>
+      {/* GAUCHE — largeur fixe identique au côté gauche du toolbar édition */}
+      <div style={{ flex: 1 }}></div>
+
+      {/* CENTRE */}
+      <div className="flex items-center gap-0.5 rounded-md border border-border-strong bg-bg-base p-0.5">
+        <DeviceButton active={device === 'desktop'} onClick={() => setDevice('desktop')}>
+          <Monitor className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Desktop</span>
+        </DeviceButton>
+        <DeviceButton active={device === 'mobile'} onClick={() => setDevice('mobile')}>
+          <Smartphone className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Mobile</span>
+        </DeviceButton>
+      </div>
+
+      {/* DROITE — flex:1 + flex-end pour coller à droite */}
+      <div style={{ flex: 1, display:'flex', justifyContent:'flex-end' }}>
+        <button
+          onClick={onClose}
+          style={{
+            border: '1.5px solid #2AC2DE',
+            color: '#052139',
+            background: 'transparent',
+            borderRadius: '8px',
+            padding: '5px 14px',
+            fontSize: '13px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <X size={14} /> Échap
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DeviceButton({
+  active,
+  onClick,
+  children
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-1.5 rounded px-2.5 py-1 text-xs transition',
+        active ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ============================================================================
+// Header (banner + title)
+// ============================================================================
+
+function PreviewHeader({ form }: { form: Form }) {
+  return (
+    <>
+      <FormHeader
+        theme={form.theme}
+        selectedElement={null}
+        onSelectBanner={() => {}}
+        onSelectLogo={() => {}}
+        preview={true}
+      />
+      <header className="mb-8">
+        <h1 className="font-display text-4xl text-text-primary">{form.title}</h1>
+        {form.description && <p className="papyrus-meta mt-2 text-base">{form.description}</p>}
+      </header>
+    </>
+  );
+}
+
+// ============================================================================
+// Field card (used by Scroll and Sections previews)
+// ============================================================================
+
+function PreviewFieldCard({
+  field,
+  form,
+  device,
+  span
+}: {
+  field: Field;
+  form: Form;
+  device: Device;
+  span: string;
+}) {
+  if (field.type === 'section_break') {
+    // Dans la vue scroll, section_break = séparateur visuel
+    return (
+      <div key={field.id} className="col-span-full pt-6">
+        {field.label.fr && <h2 className="font-display text-2xl text-text-primary">{field.label.fr}</h2>}
+        <div className="papyrus-divider mt-2" />
+      </div>
+    );
+  }
+
+  if (field.type === 'image' || field.type === 'video') {
+    return (
+      <div className={span}>
+        <FieldRenderer field={field} preview={false} mobile={device === 'mobile'} />
+      </div>
+    );
+  }
+
+  if (field.type === 'statement') {
+    // Texte libre = bloc informatif, pas une question : pas de carte, pas de bordure,
+    // juste un liseré d'accent à gauche pour le différencier visuellement.
+    return (
+      <div
+        className={cn('border-l-2 pl-4 py-1', span)}
+        style={{ borderColor: form.theme.accent }}
+      >
+        {field.label.fr && (
+          <h3 className="font-display text-lg text-text-primary">{field.label.fr}</h3>
+        )}
+        {field.description.fr && (
+          <p className="mt-1 whitespace-pre-wrap text-base leading-relaxed text-text-primary">
+            {field.description.fr}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        'min-w-0 rounded-lg border border-border p-5',
+        span,
+        form.theme.field_bg_color ? '' : 'bg-bg-surface'
+      )}
+      style={{ backgroundColor: form.theme.field_bg_color }}
+    >
+      <FieldQuestion field={field} globalStyle={form.theme.field_style} />
+      <div className="mt-4">
+        <FieldRenderer field={field} preview={false} mobile={device === 'mobile'} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Scroll Preview
+// ============================================================================
+
+function ScrollPreview({ form, device }: { form: Form; device: Device }) {
+  const fields = form.fields ?? [];
+  const hasInputs = fields.some(
+    (f) => f.type !== 'section_break' && f.type !== 'image' && f.type !== 'video' && f.type !== 'statement'
+  );
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        alert('Formulaire envoyé (démo)');
+      }}
+      className={cn('mx-auto py-12 transition-all', device === 'mobile' ? 'max-w-sm px-4' : 'max-w-2xl px-8')}
+    >
+      <PreviewHeader form={form} />
+
+      <div className={cn('grid gap-4', device === 'mobile' ? 'grid-cols-1' : 'grid-cols-2')}>
+        {fields.length === 0 && (
+          <div className="col-span-full rounded-lg border border-dashed border-border-strong bg-bg-surface p-12 text-center">
+            <p className="papyrus-meta text-sm">i. Ce formulaire n&apos;a pas encore de champ</p>
+          </div>
+        )}
+
+        {fields.map((field) => {
+          const span =
+            device === 'mobile' || (field.layout_width ?? 'full') === 'full' ? 'col-span-2' : 'col-span-1';
+          return <PreviewFieldCard key={field.id} field={field} form={form} device={device} span={span} />;
+        })}
+      </div>
+
+      {hasInputs && (
+        <div className="mt-8 flex justify-end">
+          <SubmitButton form={form} type="submit">
+            Envoyer
+          </SubmitButton>
+        </div>
+      )}
+    </form>
+  );
+}
+
+// ============================================================================
+// Sections Preview (paginated by section_break)
+// ============================================================================
+
+function SectionsPreview({ form, device }: { form: Form; device: Device }) {
+  const fields = form.fields ?? [];
+  const pages = buildPages(fields);
+  const [pageIdx, setPageIdx] = useState(0);
+  const total = pages.length;
+  const currentPage = pages[pageIdx] ?? [];
+  const progress = total > 0 ? ((pageIdx + 1) / total) * 100 : 0;
+  const isLast = pageIdx === total - 1;
+  const isFirst = pageIdx === 0;
+
+  const pageHeader = currentPage[0]?.type === 'section_break' ? currentPage[0] : null;
+  const pageFields = pageHeader ? currentPage.slice(1) : currentPage;
+
+  function handleSubmit(e: React.FormEvent) {
+    // La validation native HTML5 a déjà filtré les erreurs ici (sinon submit ne fire pas)
+    e.preventDefault();
+    if (isLast) {
+      alert('Formulaire envoyé (démo)');
+    } else {
+      setPageIdx((i) => Math.min(total - 1, i + 1));
+    }
+  }
+
+  return (
+    <form
+      key={pageIdx}
+      onSubmit={handleSubmit}
+      className={cn('mx-auto py-10 transition-all', device === 'mobile' ? 'max-w-sm px-4' : 'max-w-2xl px-8')}
+    >
+      {/* Progression */}
+      <div className="mb-6">
+        <div className="mb-1.5 flex items-center justify-between text-xs text-text-secondary">
+          <span>
+            Page <strong className="text-text-primary">{pageIdx + 1}</strong> sur {total}
+          </span>
+          {pageHeader?.label.fr && (
+            <span className="papyrus-meta text-xs">{pageHeader.label.fr}</span>
+          )}
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-bg-overlay">
+          <div
+            className="h-full rounded-full transition-all duration-300"
+            style={{ width: `${progress}%`, backgroundColor: form.theme.accent }}
+          />
+        </div>
+      </div>
+
+      {pageIdx === 0 && <PreviewHeader form={form} />}
+
+      {pageHeader?.label.fr && pageIdx > 0 && (
+        <div className="mb-6">
+          <h2 className="font-display text-3xl text-text-primary">{pageHeader.label.fr}</h2>
+          {pageHeader.description?.fr && (
+            <p className="papyrus-meta mt-2 text-base">{pageHeader.description.fr}</p>
+          )}
+        </div>
+      )}
+
+      <div className={cn('grid gap-4', device === 'mobile' ? 'grid-cols-1' : 'grid-cols-2')}>
+        {pageFields.length === 0 && pageIdx === 0 && total === 1 && (
+          <div className="col-span-full rounded-lg border border-dashed border-border-strong bg-bg-surface p-12 text-center">
+            <p className="papyrus-meta text-sm">i. Cette page est vide</p>
+          </div>
+        )}
+
+        {pageFields.map((field) => {
+          const span =
+            device === 'mobile' || (field.layout_width ?? 'full') === 'full' ? 'col-span-2' : 'col-span-1';
+          return <PreviewFieldCard key={field.id} field={field} form={form} device={device} span={span} />;
+        })}
+      </div>
+
+      {/* Navigation */}
+      <div className="mt-8 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setPageIdx((i) => Math.max(0, i - 1))}
+          disabled={isFirst}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-md border border-border-strong px-4 py-2 text-sm text-text-primary transition',
+            'disabled:cursor-not-allowed disabled:opacity-30',
+            'hover:bg-bg-surface'
+          )}
+        >
+          <ArrowLeft className="h-4 w-4" /> Précédent
+        </button>
+
+        <SubmitButton form={form} type="submit">
+          {isLast ? 'Envoyer' : 'Suivant'}
+          {!isLast && <ArrowRight className="h-4 w-4" />}
+        </SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+// ============================================================================
+// Typeform Preview (one question at a time, animated)
+// ============================================================================
+
+function TypeformPreview({ form, device }: { form: Form; device: Device }) {
+  const fields = form.fields ?? [];
+  const screens = fields.filter((f) => f.type !== 'section_break');
+  const [idx, setIdx] = useState(0);
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward');
+  const total = screens.length;
+  const current = screens[idx];
+  const isLast = idx === total - 1;
+  const progress = total > 0 ? ((idx + 1) / total) * 100 : 0;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (isLast) {
+      alert('Formulaire envoyé (démo)');
+      return;
+    }
+    setDirection('forward');
+    setIdx(idx + 1);
+  }
+
+  function prev() {
+    if (idx > 0) {
+      setDirection('back');
+      setIdx(idx - 1);
+    }
+  }
+
+  // Entrée = soumet le formulaire (déclenche la validation native)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Enter') {
+        const target = e.target as HTMLElement;
+        const isMultiline = target?.tagName === 'TEXTAREA';
+        if (!isMultiline && !e.shiftKey) {
+          // Laisse le navigateur soumettre le form courant (validation native s'applique)
+          const formEl = (e.target as HTMLElement).closest('form');
+          if (formEl) {
+            e.preventDefault();
+            formEl.requestSubmit();
+          }
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [idx]);
+
+  if (total === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="papyrus-meta text-sm">i. Ce formulaire n&apos;a pas encore de champ</p>
+      </div>
+    );
+  }
+
+  const isStatement = current.type === 'statement';
+  const bannerStyle = getBannerStyle(form.theme);
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Barre de progression fine tout en haut */}
+      <div className="h-1 w-full bg-bg-overlay">
+        <div
+          className="h-full transition-all duration-300"
+          style={{ width: `${progress}%`, backgroundColor: form.theme.accent }}
+        />
+      </div>
+
+      {/* Bannière visible en haut, sur toutes les slides */}
+      {form.theme.banner_url && (
+        <div
+          className="mx-auto w-full"
+          style={{
+            maxWidth: device === 'mobile' ? '24rem' : '48rem',
+            backgroundColor: (form.theme.banner_fit ?? 'cover') === 'contain' ? '#F7F0DC' : undefined
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={form.theme.banner_url}
+            alt="Bannière"
+            className={cn('w-full', device === 'mobile' ? 'h-24' : 'h-32')}
+            style={bannerStyle}
+          />
+        </div>
+      )}
+
+      {/* Carte centrée — TOUT dedans : numéro, question, champ, Suivant */}
+      <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
+        <AnimatePresence mode="wait" custom={direction}>
+          <motion.form
+            key={current.id}
+            onSubmit={handleSubmit}
+            custom={direction}
+            initial={{ opacity: 0, y: direction === 'forward' ? 40 : -40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: direction === 'forward' ? -40 : 40 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className={cn(
+              'flex w-full flex-col rounded-xl border bg-bg-surface shadow-sm',
+              device === 'mobile' ? 'max-w-sm p-6' : 'max-w-2xl p-10',
+              isStatement ? 'border-transparent bg-transparent shadow-none' : 'border-border'
+            )}
+            style={
+              !isStatement && form.theme.field_bg_color
+                ? { backgroundColor: form.theme.field_bg_color }
+                : undefined
+            }
+          >
+            {/* Titre du formulaire sur la première slide */}
+            {idx === 0 && (
+              <div className="mb-6">
+                <h1 className="font-display text-3xl text-text-primary">{form.title}</h1>
+                {form.description && (
+                  <p className="papyrus-meta mt-2 text-base">{form.description}</p>
+                )}
+                <div className="papyrus-divider mt-4" />
+              </div>
+            )}
+
+            {/* En-tête : retour + compteur */}
+            <div className="mb-4 flex items-center justify-between text-xs">
+              <button
+                type="button"
+                onClick={prev}
+                disabled={idx === 0}
+                className="inline-flex items-center gap-1 text-text-secondary transition hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> Retour
+              </button>
+              <span className="text-text-tertiary">
+                <strong className="text-text-secondary">{idx + 1}</strong> / {total}
+              </span>
+            </div>
+
+            {/* Question + champ (ou texte libre) */}
+            <TypeformScreen field={current} form={form} device={device} />
+
+            {/* Bouton Suivant — toujours en bas de la carte */}
+            <div className="mt-8 flex items-center justify-end">
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1.5 rounded-md px-5 py-2.5 text-sm font-medium text-mooove-ice transition hover:opacity-90"
+                style={{ backgroundColor: form.theme.accent }}
+              >
+                {isStatement ? 'Continuer' : isLast ? 'Envoyer' : 'Suivant'}
+                {!isLast && <ArrowRight className="h-4 w-4" />}
+              </button>
+            </div>
+          </motion.form>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function TypeformScreen({ field, form, device }: { field: Field; form: Form; device: Device }) {
+  if (field.type === 'image' || field.type === 'video') {
+    return <FieldRenderer field={field} preview={false} mobile={device === 'mobile'} />;
+  }
+
+  if (field.type === 'statement') {
+    // Bloc informatif — pas une question : pas de numérotation ni d'astérisque,
+    // titre optionnel discret, corps de texte large et lisible.
+    return (
+      <div className="text-center">
+        {field.label.fr && (
+          <h2 className="font-display text-xl italic text-text-secondary">{field.label.fr}</h2>
+        )}
+        {field.description.fr && (
+          <p
+            className={cn(
+              'whitespace-pre-wrap leading-relaxed text-text-primary',
+              field.label.fr ? 'mt-3' : '',
+              device === 'mobile' ? 'text-lg' : 'text-2xl'
+            )}
+          >
+            {field.description.fr}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <FieldQuestion field={field} globalStyle={form.theme.field_style} />
+      <div className="mt-4">
+        <FieldRenderer field={field} preview={false} mobile={device === 'mobile'} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Shared : question header + submit button
+// ============================================================================
+
+function FieldQuestion({
+  field,
+  globalStyle
+}: {
+  field: Field;
+  globalStyle?: FieldStyle;
+}) {
+  const style = { ...(globalStyle ?? {}), ...(field.style ?? {}) };
+  const sizeClass = {
+    sm: 'text-sm',
+    md: 'text-base',
+    lg: 'text-lg',
+    xl: 'text-2xl'
+  }[style.label_size ?? 'lg'];
+  const fontClass = {
+    sans: 'font-sans',
+    display: 'font-sans', // alias : aligné sur Aktiv (Mooove)
+    serif: 'font-serif',
+    mono: 'font-mono'
+  }[style.font_family ?? 'sans'];
+  const weightClass =
+    style.label_weight === 'bold' ? 'font-bold' : style.label_weight === 'medium' ? 'font-medium' : '';
+
+  return (
+    <div>
+      <div
+        className={cn(sizeClass, fontClass, weightClass, style.label_italic && 'italic', 'leading-snug text-text-primary')}
+        style={{ color: style.label_color, textAlign: style.label_align }}
+      >
+        {field.label.fr || 'Question sans titre'}
+        {field.required && <span className="ml-1 text-danger">*</span>}
+      </div>
+      {field.description.fr && <p className="papyrus-meta mt-1 text-sm">{field.description.fr}</p>}
+    </div>
+  );
+}
+
+function SubmitButton({
+  form,
+  children,
+  type = 'button'
+}: {
+  form: Form;
+  children: React.ReactNode;
+  type?: 'button' | 'submit';
+}) {
+  return (
+    <button
+      type={type}
+      className="inline-flex items-center gap-1.5 rounded-md px-5 py-2 text-sm font-medium text-mooove-ice transition hover:opacity-90"
+      style={{ backgroundColor: form.theme.accent }}
+    >
+      {children}
+    </button>
+  );
+}

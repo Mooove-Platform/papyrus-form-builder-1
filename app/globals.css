@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Palette Mooove — officielle */
+  --mooove-navy: #052139;
+  --mooove-cyan: #2AC2DE;
+  --mooove-amber: #F6923E;
+  --mooove-electric: #3C5EAB;
+  --mooove-ice: #EFF9FE;
+  --mooove-sky: #C7EAFB;
+
+  /* Palette Papyrus — thème clair */
+  --papyrus-bg: #F7F0DC;
+  --papyrus-surface: #FFFDF5;
+  --papyrus-border: #D4B896;
+  --papyrus-muted: #8B7355;
+  --papyrus-ink: #2A1F0E;
+
+  /* Thème clair (défaut) */
+  --bg-base: #F7F0DC;
+  --bg-surface: #FFFDF5;
+  --bg-elevated: #FFF8E8;
+  --bg-overlay: #F0E6C8;
+  --border: #D4B896;
+  --border-strong: #C4A882;
+  --text-primary: #052139;
+  --text-secondary: #8B7355;
+  --text-tertiary: #B8A080;
+  --accent: #052139;
+  --accent-cta: #2AC2DE;
+  --accent-warm: #F6923E;
+  --accent-bold: #3C5EAB;
+  --success: #2AC2DE;
+  --warning: #F6923E;
+  --danger: #C0392B;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+
+  /* Typographie — par défaut Aktiv Grotesk (identité Mooove). var(--font-aktiv) est
+     chargée par next/font dans app/layout.tsx (DM Sans = substitut libre d'Aktiv Grotesk). */
+  --font-body: var(--font-aktiv), 'Aktiv Grotesk', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: var(--font-aktiv), 'Aktiv Grotesk', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-serif: Georgia, 'Times New Roman', serif; /* identité Papyrus, en option */
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+[data-theme='dark'] {
+  --bg-base: #052139;
+  --bg-surface: #0A3050;
+  --bg-elevated: #0D3A60;
+  --bg-overlay: #1A4A72;
+  --border: #1A4A72;
+  --border-strong: #3C5EAB;
+  --text-primary: #EFF9FE;
+  --text-secondary: #C7EAFB;
+  --text-tertiary: #4A6B8A;
+  --accent: #2AC2DE;
+  --accent-cta: #2AC2DE;
+  --accent-warm: #F6923E;
+  --accent-bold: #3C5EAB;
+  --success: #2AC2DE;
+  --warning: #F6923E;
+  --danger: #E74C3C;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+  }
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+  /* Scrollbar discret */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+  }
+  /* Focus ring cohérent */
+  :focus-visible {
+    outline: 2px solid var(--accent-cta);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  .papyrus-divider {
+    border-top: 1px dashed var(--border);
+  }
+  /* Petites notes "i. ..." — restent en italique serif (flourish Papyrus, marque de fabrique) */
+  .papyrus-meta {
+    color: var(--text-secondary);
+    font-style: italic;
+    font-family: var(--font-serif);
+  }
+  /* Numérotation romaine — idem, on garde la touche serif italique caractéristique */
+  .papyrus-numeral {
+    font-family: var(--font-serif);
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+}
