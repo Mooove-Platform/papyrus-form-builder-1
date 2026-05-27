@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/Switch';
 import { FieldRenderer } from './FieldRenderer';
 import { EditableOptions } from './EditableOptions';
 import { EditableMatrix } from './EditableMatrix';
+import { LIMITS } from '@/lib/constants/limits';
 
 interface Props {
   field: Field;
@@ -99,7 +100,10 @@ function FieldCard({
   const isImage = field.type === 'image';
   const isVideo = field.type === 'video';
   const isStatement = field.type === 'statement';
-  const isLayout = isSectionBreak || isImage || isVideo;
+
+  // Image et video avec titre activé sont traités comme des questions avec numéro
+  const showTitleForMedia = (isImage || isVideo) && field.validation?.show_title;
+  const isLayout = isSectionBreak || (isImage && !showTitleForMedia) || (isVideo && !showTitleForMedia);
   const collectsAnswer = !isLayout && !isStatement;
   const isChoiceLike =
     field.type === 'single_choice' || field.type === 'multiple_choice' || field.type === 'dropdown';
@@ -122,6 +126,7 @@ function FieldCard({
 
   return (
     <div
+      data-field-id={field.id}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
@@ -201,16 +206,23 @@ function FieldCard({
       </div>
 
       {/* Question — éditable inline (titre optionnel pour les statements) */}
-      {!isLayout ? (
+      {!isLayout || showTitleForMedia ? (
         <div className="mb-1.5 flex items-baseline gap-2">
-          {!isStatement && (
+          {(!isStatement || showTitleForMedia) && (
             <span className="papyrus-numeral shrink-0 text-sm">{romanNumeral(index + 1)}.</span>
           )}
           <AutoTextarea
             value={field.label.fr ?? ''}
             onChange={(e) => patchText('label', e.target.value)}
-            placeholder={isStatement ? 'Titre (optionnel)' : 'Tapez votre question…'}
+            placeholder={
+              isStatement
+                ? 'Titre (optionnel)'
+                : showTitleForMedia
+                  ? 'Titre du média'
+                  : 'Tapez votre question…'
+            }
             style={labelInlineStyle}
+            maxLength={LIMITS.FIELD_LABEL_MAX}
             className={cn(
               '-mx-1 min-w-0 flex-1 rounded bg-transparent px-1 leading-snug text-text-primary placeholder:text-text-tertiary focus:bg-bg-elevated/50 focus:outline-none',
               labelClass
@@ -225,6 +237,7 @@ function FieldCard({
             onChange={(e) => patchText('label', e.target.value)}
             placeholder={isSectionBreak ? 'Titre de la section' : 'Légende (optionnelle)'}
             style={labelInlineStyle}
+            maxLength={LIMITS.SECTION_TITLE_MAX}
             className={cn(
               '-mx-1 mb-1.5 w-full rounded bg-transparent px-1 leading-snug text-text-primary placeholder:text-text-tertiary focus:bg-bg-elevated/50 focus:outline-none',
               labelClass
@@ -239,6 +252,7 @@ function FieldCard({
           value={field.description.fr ?? ''}
           onChange={(e) => patchText('description', e.target.value)}
           placeholder={isStatement ? 'Tapez votre texte…' : 'Description (optionnelle)'}
+          maxLength={field.type === 'statement' ? LIMITS.STATEMENT_TEXT_MAX : LIMITS.FIELD_DESCRIPTION_MAX}
           className="-mx-1 mb-2.5 w-full rounded bg-transparent px-1 text-sm italic text-text-secondary placeholder:text-text-tertiary placeholder:not-italic focus:bg-bg-elevated/50 focus:outline-none"
         />
       )}
@@ -255,7 +269,7 @@ function FieldCard({
       ) : field.type === 'matrix' ? (
         <EditableMatrix field={field} onChange={onChange} />
       ) : (
-        <FieldRenderer field={field} preview />
+        <FieldRenderer field={field} preview={false} onChange={onChange} globalStyle={globalStyle} />
       )}
     </div>
   );

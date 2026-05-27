@@ -1,14 +1,52 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { Star, Upload, ImageOff, PlayCircle } from 'lucide-react';
 import type { Field, FieldOption, SubField } from '@/types';
-import { DEFAULT_MAX_LENGTH } from '@/lib/field-meta';
 import { AutoTextarea } from '@/components/ui/AutoTextarea';
 import { PhoneField as BuilderPhoneField } from './fields/PhoneField';
 import { PhoneField as RespondentPhoneField } from '@/components/respondent/fields/PhoneField';
+import { FileUploadField } from '@/components/respondent/fields/FileUploadField';
 import { parseVideoEmbed } from '@/lib/video';
 import { cn } from '@/lib/utils';
+import { LIMITS } from '@/lib/constants/limits';
+
+/** Retourne les types de fichiers acceptés par défaut selon le type de champ */
+function getDefaultAcceptTypes(type: 'image' | 'video' | 'file'): string {
+  const defaultAcceptTypes = {
+    image: 'image/*',
+    video: 'video/*',
+    file: 'image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv'
+  };
+  return defaultAcceptTypes[type];
+}
+
+/** Extrait le nom de fichier d'une URL ou data URL */
+function extractFileName(url: string, fallback = 'Fichier'): string {
+  // Si c'est une data URL, utiliser le fallback avec l'extension détectée
+  if (url.startsWith('data:')) {
+    const mimeMatch = url.match(/data:([^;]+)/);
+    if (mimeMatch) {
+      const mimeType = mimeMatch[1];
+      const extensions: Record<string, string> = {
+        'application/pdf': 'pdf',
+        'application/msword': 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'application/vnd.ms-excel': 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+        'text/plain': 'txt',
+        'text/csv': 'csv'
+      };
+      const ext = extensions[mimeType] || 'fichier';
+      return `${fallback}.${ext}`;
+    }
+    return fallback;
+  }
+
+  // Pour les URLs normales, extraire le nom de fichier
+  const fileName = url.split('/').pop();
+  return fileName && fileName.length > 0 ? decodeURIComponent(fileName) : fallback;
+}
 
 /** Mélange un tableau de façon stable pour une vie de composant (Fisher–Yates). */
 function shuffled<T>(arr: T[]): T[] {
@@ -39,10 +77,14 @@ interface Props {
   preview?: boolean;
   /** Si true, force la mise en page mobile (1 colonne pour les options). */
   mobile?: boolean;
+  /** Fonction pour modifier le champ (utilisée dans le builder). */
+  onChange?: (patch: Partial<Field>) => void;
+  /** Style global appliqué à toutes les questions (depuis form.theme.field_style). */
+  globalStyle?: any;
 }
 
 /** Rendu UI d'un champ — utilisé dans le builder (preview) et la vue publique. */
-export function FieldRenderer({ field, preview = false, mobile = false }: Props) {
+export function FieldRenderer({ field, preview = false, mobile = false, onChange, globalStyle }: Props) {
   const lang = 'fr';
   const placeholder = field.placeholder?.[lang] ?? '';
   const required = field.required;
@@ -50,18 +92,16 @@ export function FieldRenderer({ field, preview = false, mobile = false }: Props)
     'w-full rounded-md border border-border-strong bg-bg-base px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none disabled:cursor-default disabled:opacity-100';
 
   switch (field.type) {
-    case 'short_text':
+    case 'short_text': {
       return (
-        <input
-          type="text"
-          name={field.id}
-          required={required && !preview}
-          maxLength={field.validation?.max ?? DEFAULT_MAX_LENGTH.short_text}
-          className={baseInput}
+        <ShortTextWithCounter
+          field={field}
           placeholder={placeholder || 'Votre réponse'}
-          disabled={preview}
+          required={required}
+          preview={preview}
         />
       );
+    }
 
     case 'email':
       return (
@@ -69,7 +109,7 @@ export function FieldRenderer({ field, preview = false, mobile = false }: Props)
           name={field.id}
           type="email"
           required={required && !preview}
-          maxLength={DEFAULT_MAX_LENGTH.email}
+          maxLength={LIMITS.EMAIL_MAX_CHARS}
           placeholder={placeholder || 'vous@exemple.com'}
           baseInput={baseInput}
           preview={preview}
@@ -82,50 +122,45 @@ export function FieldRenderer({ field, preview = false, mobile = false }: Props)
           name={field.id}
           type="url"
           required={required && !preview}
-          maxLength={DEFAULT_MAX_LENGTH.url}
+          maxLength={LIMITS.URL_MAX_CHARS}
           placeholder={placeholder || 'https://exemple.com'}
           baseInput={baseInput}
           preview={preview}
         />
       );
 
-    case 'long_text':
+    case 'long_text': {
       return (
-        <AutoTextarea
-          name={field.id}
-          minRows={3}
-          required={required && !preview}
-          maxLength={field.validation?.max ?? DEFAULT_MAX_LENGTH.long_text}
-          className={`${baseInput} break-words`}
+        <LongTextWithCounter
+          field={field}
           placeholder={placeholder || 'Votre réponse…'}
-          disabled={preview}
+          required={required}
+          preview={preview}
         />
       );
+    }
 
     case 'number':
       return (
-        <input
-          type="number"
-          name={field.id}
-          required={required && !preview}
-          className={baseInput}
+        <NumberInputWithValidation
+          field={field}
           placeholder={placeholder || '0'}
-          min={field.validation?.min}
-          max={field.validation?.max}
-          disabled={preview}
+          required={required}
+          preview={preview}
+          baseInput={baseInput}
         />
       );
 
     case 'phone':
       return preview ? (
         <BuilderPhoneField
-          placeholder={placeholder || '57 12 34 56'}
+          placeholder={placeholder}
         />
       ) : (
         <RespondentPhoneField
           name={field.id}
           required={required}
-          placeholder={placeholder || '57 12 34 56'}
+          placeholder={placeholder}
         />
       );
 
@@ -158,70 +193,16 @@ export function FieldRenderer({ field, preview = false, mobile = false }: Props)
       return <NpsScale preview={preview} />;
 
     case 'file':
-      return <FilePicker preview={preview} required={required} />;
+      return <MediaField field={field} preview={preview} required={required} type="file" onChange={onChange} globalStyle={globalStyle} />;
 
     case 'matrix':
       return <MatrixField field={field} preview={preview} />;
 
-    case 'image': {
-      const url = field.validation?.media_url;
-      const alignment = field.validation?.alignment ?? 'center';
-      const alignClass =
-        alignment === 'left' ? 'justify-start' : alignment === 'right' ? 'justify-end' : 'justify-center';
-      if (!url) {
-        return (
-          <div className="flex items-center justify-center rounded-md border border-dashed border-border-strong bg-bg-base px-4 py-10 text-text-tertiary">
-            <div className="flex flex-col items-center gap-2">
-              <ImageOff className="h-6 w-6" />
-              <span className="text-xs">Ajoutez une image dans le panneau de droite</span>
-            </div>
-          </div>
-        );
-      }
-      return (
-        <div className={`flex ${alignClass}`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={url}
-            alt={field.label.fr || 'Image'}
-            className="max-h-80 max-w-full rounded-md object-contain"
-          />
-        </div>
-      );
-    }
+    case 'image':
+      return <MediaField field={field} preview={preview} required={required} type="image" onChange={onChange} globalStyle={globalStyle} />;
 
-    case 'video': {
-      const url = field.validation?.media_url;
-      if (!url) {
-        return (
-          <div className="flex items-center justify-center rounded-md border border-dashed border-border-strong bg-bg-base px-4 py-10 text-text-tertiary">
-            <div className="flex flex-col items-center gap-2">
-              <PlayCircle className="h-6 w-6" />
-              <span className="text-xs">Collez un lien YouTube ou Vimeo dans le panneau de droite</span>
-            </div>
-          </div>
-        );
-      }
-      const parsed = parseVideoEmbed(url);
-      if (!parsed) {
-        return (
-          <div className="rounded-md border border-dashed border-danger/40 bg-danger/5 px-4 py-3 text-xs text-danger">
-            URL non reconnue — uniquement YouTube et Vimeo sont supportés pour l&apos;instant.
-          </div>
-        );
-      }
-      return (
-        <div className="aspect-video w-full overflow-hidden rounded-md border border-border bg-black">
-          <iframe
-            src={parsed.embedUrl}
-            title={field.label.fr || 'Vidéo'}
-            className="h-full w-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
-        </div>
-      );
-    }
+    case 'video':
+      return <MediaField field={field} preview={preview} required={required} type="video" onChange={onChange} globalStyle={globalStyle} />;
 
     case 'section_break':
     case 'statement':
@@ -273,6 +254,10 @@ function ValidatedTextInput({
     }
   }
 
+  const currentLength = value.length;
+  const isNearLimit = currentLength > maxLength * 0.8;
+  const isAtLimit = currentLength >= maxLength;
+
   return (
     <div className="space-y-1">
       <input
@@ -285,8 +270,42 @@ function ValidatedTextInput({
         onBlur={() => setTouched(true)}
         placeholder={placeholder}
         disabled={preview}
-        className={`${baseInput} ${error ? 'border-danger focus:border-danger' : ''}`}
+        className={cn(
+          baseInput,
+          'break-words overflow-hidden', // Empêche le débordement
+          error ? 'border-danger focus:border-danger' : '',
+          isAtLimit && !preview && 'border-orange-400 focus:border-orange-400'
+        )}
+        style={{
+          wordBreak: 'break-word',
+          overflowWrap: 'break-word'
+        }}
       />
+
+      {/* Compteur de caractères pour email/url */}
+      {!preview && maxLength && (
+        <div className="flex justify-between text-xs">
+          <span className="text-text-tertiary">
+            {currentLength}/{maxLength} caractères
+          </span>
+          {isNearLimit && (
+            <span className={cn(
+              'font-medium',
+              isAtLimit ? 'text-danger' : 'text-orange-600'
+            )}>
+              {isAtLimit ? 'Limite atteinte' : 'Proche de la limite'}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Mode preview : affiche seulement la limite */}
+      {preview && maxLength && (
+        <p className="text-xs text-text-tertiary">
+          Maximum {maxLength} caractères
+        </p>
+      )}
+
       {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
@@ -306,7 +325,7 @@ function SingleChoice({ field, preview, mobile, required }: { field: Field; prev
   const hasOther = field.validation?.has_other ?? false;
   const otherLabel = field.validation?.other_label || 'Autre';
   const cols = field.validation?.options_columns ?? 1;
-  const style = field.validation?.display_style ?? 'cards';
+  const style = field.validation?.display_style ?? 'buttons';
   const isButtons = style === 'buttons';
   const displayOptions = useDisplayOptions(field);
 
@@ -383,7 +402,9 @@ function SingleChoice({ field, preview, mobile, required }: { field: Field; prev
             onChange={(e) => setOtherText(e.target.value)}
             disabled={preview}
             placeholder="Précisez…"
-            className="w-full rounded-md border border-border-strong bg-bg-base px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
+            maxLength={200}
+            className="w-full rounded-md border border-border-strong bg-bg-base px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none break-words overflow-hidden"
+            style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
           />
         )}
       </div>
@@ -824,40 +845,1052 @@ function NpsScale({ preview }: { preview: boolean }) {
   );
 }
 
-function FilePicker({ preview, required }: { preview: boolean; required?: boolean }) {
-  const [fileName, setFileName] = useState<string | null>(null);
-  const inputId = `file-${Math.random().toString(36).slice(2, 8)}`;
+
+/** Interface de sélection des modes pour les champs Media */
+function ModeSelector({ field, type, labels, onChange }: {
+  field: Field;
+  type: 'image' | 'video' | 'file';
+  labels: { creator: string; respondent: string };
+  onChange?: (patch: Partial<Field>) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function patchValidation(patch: Partial<import('@/types').FieldValidation>) {
+    if (!onChange) return;
+    onChange({ validation: { ...field.validation, ...patch } });
+  }
+
+  function handleCreatorClick() {
+    patchValidation({ creator_mode_enabled: true });
+
+    // Pour image/fichier, ouvrir directement le sélecteur avec fallback
+    if ((type === 'image' || type === 'file') && fileInputRef.current) {
+      setTimeout(() => {
+        try {
+          fileInputRef.current?.click();
+        } catch (error) {
+          console.warn('Impossible d\'ouvrir automatiquement le sélecteur de fichier:', error);
+        }
+      }, 150);
+    }
+  }
+
+  function handleFileUpload(file: File) {
+    // Validation des fichiers
+    const maxSize = 1.5 * 1024 * 1024; // 1.5 Mo
+    if (file.size > maxSize) {
+      alert(`Fichier trop lourd (${Math.round(file.size / 1024)} Ko). Maximum 1,5 Mo. Compressez-le ou utilisez une URL.`);
+      return;
+    }
+
+    // Validation des extensions selon le type
+    const allowedExtensions = {
+      image: ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'],
+      video: ['.mp4', '.mov', '.avi', '.mkv', '.webm'],
+      file: ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv']
+    };
+
+    const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!allowedExtensions[type].includes(fileExt)) {
+      alert(`Format non supporté. Extensions autorisées : ${allowedExtensions[type].join(', ')}`);
+      return;
+    }
+
+    // Convertir en Data URL
+    const reader = new FileReader();
+    reader.onload = () => patchValidation({ media_url: reader.result as string });
+    reader.readAsDataURL(file);
+  }
+
+  const typeDescriptions = {
+    image: { creator: "Ajoutez une image qui s'affiche", respondent: "Le répondant peut envoyer une image" },
+    video: { creator: "Ajoutez une vidéo qui s'affiche", respondent: "Le répondant peut envoyer une vidéo" },
+    file: { creator: "Ajoutez un fichier téléchargeable", respondent: "Le répondant peut envoyer un fichier" }
+  };
+
+  const desc = typeDescriptions[type];
 
   return (
-    <label
-      htmlFor={inputId}
-      className={`flex flex-col items-center gap-2 rounded-md border border-dashed border-border-strong bg-bg-base px-4 py-6 text-sm text-text-secondary transition ${
-        preview ? 'cursor-default' : 'cursor-pointer hover:border-accent hover:bg-bg-elevated'
-      }`}
-    >
-      <Upload className="h-5 w-5" />
-      {fileName ? (
-        <span className="break-all text-center text-text-primary">{fileName}</span>
-      ) : (
-        <span className="text-center">
-          <span className="text-text-primary underline-offset-4">Choisir un fichier</span>
-          <span className="block text-xs text-text-tertiary">
-            ou glissez-le ici · photo, vidéo, document…
-          </span>
-        </span>
-      )}
-      <input
-        id={inputId}
-        type="file"
-        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
-        className="hidden"
-        required={required && !preview}
-        disabled={preview}
-        onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
-      />
-    </label>
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-text-primary">Choix du mode</p>
+        <p className="text-xs text-text-secondary">
+          Choisissez comment ce champ fonctionnera
+        </p>
+      </div>
+
+      <div className="rounded-xl border-2 border-red-500 border-dashed bg-red-50/50 p-3">
+        <div className="grid grid-cols-2 gap-3">
+          {/* Zone Créateur */}
+          <button
+            type="button"
+            onClick={handleCreatorClick}
+            className="group relative flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-accent/30 bg-bg-base p-6 text-center transition-all hover:border-accent hover:bg-accent/5"
+          >
+            <Upload className="h-8 w-8 text-accent" />
+            <div className="space-y-1">
+              <h4 className="font-medium text-text-primary">{labels.creator}</h4>
+              <p className="text-xs text-text-tertiary">{desc.creator}</p>
+            </div>
+            <span className="rounded-md bg-accent/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-accent">
+              Créateur
+            </span>
+          </button>
+
+          {/* Zone Répondant */}
+          <button
+            type="button"
+            onClick={() => patchValidation({ respondent_mode_enabled: true })}
+            className="group relative flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-mooove-cyan/30 bg-bg-base p-6 text-center transition-all hover:border-mooove-cyan hover:bg-mooove-cyan/5"
+          >
+            <div className="h-8 w-8 flex items-center justify-center text-mooove-cyan">
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-medium text-text-primary">{labels.respondent}</h4>
+              <p className="text-xs text-text-tertiary">{desc.respondent}</p>
+            </div>
+            <span className="rounded-md bg-mooove-cyan/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-mooove-cyan">
+              Répondant
+            </span>
+          </button>
+        </div>
+
+        {/* Input caché pour sélection de fichier */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={type === 'image' ? 'image/*' : type === 'file' ? '.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv' : ''}
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileUpload(file);
+            e.target.value = '';
+          }}
+        />
+
+        {/* Message d'erreur */}
+        <div className="mt-3 flex items-start gap-2 rounded-md bg-red-100 border border-red-200 px-3 py-2">
+          <div className="text-red-600 mt-0.5">⚠️</div>
+          <div>
+            <p className="text-xs font-medium text-red-800">Veuillez choisir au moins un mode</p>
+            <p className="text-xs text-red-600 mt-0.5">pour que ce champ soit fonctionnel</p>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
+
+/** Composant unifié pour Image, Vidéo, Fichier avec modes créateur/répondant */
+function MediaField({ field, preview, required, type, onChange, globalStyle }: {
+  field: Field;
+  preview: boolean;
+  required?: boolean;
+  type: 'image' | 'video' | 'file';
+  onChange?: (patch: Partial<Field>) => void;
+  globalStyle?: any;
+}) {
+  const creatorModeEnabled = field.validation?.creator_mode_enabled ?? false;
+  const respondentModeEnabled = field.validation?.respondent_mode_enabled ?? false;
+  const mediaUrl = field.validation?.media_url;
+  const alignment = field.validation?.alignment ?? 'center';
+
+  // Labels selon le type
+  const labels = {
+    image: { creator: 'Ajouter une image', respondent: 'Demander une image' },
+    video: { creator: 'Ajouter une vidéo', respondent: 'Demander une vidéo' },
+    file: { creator: 'Ajouter un fichier', respondent: 'Demander un fichier' }
+  };
+
+  // En mode preview : affiche seulement le contenu final
+  if (preview) {
+    // Utiliser la même logique pour détecter les modes actifs
+    const finalCreatorModePreview = creatorModeEnabled || (mediaUrl && !respondentModeEnabled);
+    const finalRespondentModePreview = respondentModeEnabled;
+
+    return (
+      <div className="space-y-4">
+        {/* Contenu du créateur */}
+        {finalCreatorModePreview && mediaUrl && (
+          <CreatorContent type={type} mediaUrl={mediaUrl} alignment={alignment} field={field} preview globalStyle={globalStyle} />
+        )}
+
+        {/* Divider si les deux modes sont actifs */}
+        {finalCreatorModePreview && finalRespondentModePreview && mediaUrl && (
+          <div className="border-t border-border" />
+        )}
+
+        {/* Zone de dépôt du répondant */}
+        {finalRespondentModePreview && (
+          <FileUploadField
+            type={type}
+            enabled={true}
+            required={required}
+            preview={true}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // DEBUG: Afficher les valeurs pour diagnostiquer
+  console.log(`MediaField ${type}:`, { creatorModeEnabled, respondentModeEnabled, mediaUrl });
+
+  // TEMP: Force l'affichage de ModeSelector pour debug
+  if (!creatorModeEnabled && !respondentModeEnabled) {
+    return <ModeSelector field={field} type={type} labels={labels} onChange={onChange} />;
+  }
+
+  // Si il y a du contenu mais aucun mode activé, activer automatiquement le mode créateur
+  const finalCreatorMode = creatorModeEnabled || (mediaUrl && !respondentModeEnabled);
+  const finalRespondentMode = respondentModeEnabled;
+
+  // Si au moins un mode est sélectionné, affiche seulement la zone active
+  return (
+    <div className="space-y-4">
+      {/* Zone créateur active */}
+      {finalCreatorMode && (
+        <ExpandedCreatorZone
+          field={field}
+          type={type}
+          labels={labels}
+          onChange={onChange}
+          canSwitchMode={finalRespondentMode}
+          globalStyle={globalStyle}
+        />
+      )}
+
+      {/* Zone répondant active */}
+      {finalRespondentMode && !finalCreatorMode && (
+        <ExpandedRespondentZone
+          field={field}
+          type={type}
+          labels={labels}
+          onChange={onChange}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Zone créateur agrandie après sélection */
+function ExpandedCreatorZone({ field, type, labels, onChange, canSwitchMode, globalStyle }: {
+  field: Field;
+  type: 'image' | 'video' | 'file';
+  labels: { creator: string; respondent: string };
+  onChange?: (patch: Partial<Field>) => void;
+  canSwitchMode: boolean;
+  globalStyle?: any;
+}) {
+  const [urlInput, setUrlInput] = useState(field.validation?.media_url || '');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function patchValidation(patch: Partial<import('@/types').FieldValidation>) {
+    if (!onChange) return;
+    onChange({ validation: { ...field.validation, ...patch } });
+  }
+
+  function handleFileUpload(file: File) {
+    // Validation des fichiers
+    const maxSize = 1.5 * 1024 * 1024; // 1.5 Mo
+    if (file.size > maxSize) {
+      alert(`Fichier trop lourd (${Math.round(file.size / 1024)} Ko). Maximum 1,5 Mo. Compressez-le ou utilisez une URL.`);
+      return;
+    }
+
+    // Validation des extensions selon le type
+    const allowedExtensions = {
+      image: ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'],
+      video: ['.mp4', '.mov', '.avi', '.mkv', '.webm'],
+      file: ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv']
+    };
+
+    const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!allowedExtensions[type].includes(fileExt)) {
+      alert(`Format non supporté. Extensions autorisées : ${allowedExtensions[type].join(', ')}`);
+      return;
+    }
+
+    // Convertir en Data URL
+    const reader = new FileReader();
+    reader.onload = () => patchValidation({ media_url: reader.result as string });
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Header avec mode actif */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-text-primary">{labels[type].creator}</span>
+          <span className="rounded-md bg-accent px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
+            Créateur
+          </span>
+        </div>
+        {canSwitchMode && (
+          <button
+            type="button"
+            onClick={() => patchValidation({ creator_mode_enabled: false, respondent_mode_enabled: true })}
+            className="text-xs text-mooove-cyan hover:underline"
+          >
+            Passer en mode Répondant
+          </button>
+        )}
+      </div>
+
+      {/* Interface selon le type */}
+      {type === 'video' && (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm text-text-secondary mb-2">Lien YouTube ou Vimeo</label>
+            <input
+              type="url"
+              value={urlInput}
+              onChange={(e) => {
+                setUrlInput(e.target.value);
+                patchValidation({ media_url: e.target.value || undefined });
+              }}
+              placeholder="https://youtube.com/watch?v=..."
+              className="w-full rounded-md border border-border-strong bg-bg-base px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
+            />
+            <p className="text-xs text-text-tertiary mt-1">
+              Formats acceptés : youtu.be/ID · youtube.com/watch?v=ID · vimeo.com/ID
+            </p>
+          </div>
+
+          {field.validation?.media_url && (
+            <CreatorContent type={type} mediaUrl={field.validation.media_url} alignment="center" field={field} compact={false} globalStyle={globalStyle} />
+          )}
+        </div>
+      )}
+
+      {(type === 'image' || type === 'file') && (
+        <div className="space-y-3">
+          {field.validation?.media_url ? (
+            <div className="space-y-3">
+              <CreatorContent
+                type={type}
+                mediaUrl={field.validation.media_url}
+                alignment={field.validation?.alignment ?? 'center'}
+                field={field}
+                compact={false}
+                onSizeChange={(width, height) => {
+                  patchValidation({
+                    image_width: width,
+                    image_height: height,
+                    // Stocker les dimensions originales si pas encore définies
+                    original_width: field?.validation?.original_width ?? field?.validation?.image_width ?? width,
+                    original_height: field?.validation?.original_height ?? field?.validation?.image_height ?? height
+                  });
+                }}
+                onPositionChange={(x, y) => {
+                  patchValidation({
+                    image_position_x: x,
+                    image_position_y: y
+                  });
+                }}
+                globalStyle={globalStyle}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-accent bg-accent/5 p-8 text-center transition hover:bg-accent/10"
+            >
+              <Upload className="h-8 w-8 text-accent" />
+              <div>
+                <p className="font-medium text-text-primary">
+                  {type === 'image' ? 'Cliquez pour ajouter une image' : 'Cliquez pour ajouter un fichier'}
+                </p>
+                <p className="text-xs text-text-tertiary mt-1">
+                  {type === 'image'
+                    ? 'PNG, JPG, SVG, WebP · max 1,5 Mo'
+                    : 'PDF, DOC, XLS, TXT, CSV · max 1,5 Mo'
+                  }
+                </p>
+              </div>
+            </button>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={type === 'image' ? 'image/*' : '.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv'}
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleFileUpload(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Zone répondant agrandie après sélection */
+function ExpandedRespondentZone({ field, type, labels, onChange }: {
+  field: Field;
+  type: 'image' | 'video' | 'file';
+  labels: { creator: string; respondent: string };
+  onChange?: (patch: Partial<Field>) => void;
+}) {
+  function patchValidation(patch: Partial<import('@/types').FieldValidation>) {
+    if (!onChange) return;
+    onChange({ validation: { ...field.validation, ...patch } });
+  }
+
+  const maxFileSize = field.validation?.max_file_size_mb ?? 10;
+  const acceptTypes = field.validation?.accept?.join(', ') ?? getDefaultAcceptTypes(type);
+
+  return (
+    <div className="space-y-3">
+      {/* Header avec mode actif */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-text-primary">{labels[type].respondent}</span>
+          <span className="rounded-md bg-mooove-cyan px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
+            Répondant
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => patchValidation({ respondent_mode_enabled: false, creator_mode_enabled: true })}
+          className="text-xs text-accent hover:underline"
+        >
+          Passer en mode Créateur
+        </button>
+      </div>
+
+      {/* Zone de dépôt simulée */}
+      <div className="w-full flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-mooove-cyan bg-mooove-cyan/5 p-8 text-center">
+        <div className="h-8 w-8 flex items-center justify-center text-mooove-cyan">
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        </div>
+        <div>
+          <p className="font-medium text-text-primary">
+            {type === 'image' ? 'Les répondants pourront déposer une image' :
+             type === 'video' ? 'Les répondants pourront déposer une vidéo' :
+             'Les répondants pourront déposer un fichier'}
+          </p>
+          <p className="text-xs text-text-tertiary mt-1">
+            Formats : {acceptTypes} · Max {maxFileSize} MB
+          </p>
+        </div>
+      </div>
+
+      {/* Paramètres rapides */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-text-secondary mb-1">Formats acceptés</label>
+          <input
+            type="text"
+            value={acceptTypes}
+            onChange={(e) => patchValidation({
+              accept: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+            })}
+            className="w-full rounded-md border border-border-strong bg-bg-base px-2 py-1 text-xs"
+            placeholder=".jpg,.png,.pdf"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-text-secondary mb-1">Taille max (MB)</label>
+          <input
+            type="number"
+            value={maxFileSize}
+            onChange={(e) => patchValidation({
+              max_file_size_mb: e.target.value ? Number(e.target.value) : undefined
+            })}
+            min={1}
+            max={50}
+            className="w-full rounded-md border border-border-strong bg-bg-base px-2 py-1 text-xs"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Zone créateur dans le builder */
+function CreatorZone({ type, enabled, mediaUrl, alignment }: {
+  type: 'image' | 'video' | 'file';
+  enabled: boolean;
+  mediaUrl?: string;
+  alignment: string;
+}) {
+  if (!enabled) {
+    return (
+      <div className="flex h-24 items-center justify-center rounded-md border-2 border-dashed border-border bg-bg-base text-xs text-text-tertiary">
+        Mode désactivé
+      </div>
+    );
+  }
+
+  if (!mediaUrl) {
+    const icons = {
+      image: <ImageOff className="h-5 w-5" />,
+      video: <PlayCircle className="h-5 w-5" />,
+      file: <Upload className="h-5 w-5" />
+    };
+    const texts = {
+      image: 'Ajoutez une image',
+      video: 'Collez un lien',
+      file: 'Ajoutez un fichier'
+    };
+
+    return (
+      <div className="flex h-24 items-center justify-center rounded-md border-2 border-dashed border-border bg-bg-base text-xs text-text-tertiary">
+        <div className="flex flex-col items-center gap-1">
+          {icons[type]}
+          <span>{texts[type]}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Affichage du contenu selon le type
+  return <CreatorContent type={type} mediaUrl={mediaUrl} alignment={alignment} compact globalStyle={globalStyle} />;
+}
+
+/** Composant ResizableImage avec poignées de redimensionnement */
+function ResizableImage({
+  src,
+  alt,
+  field,
+  onSizeChange,
+  onPositionChange,
+  alignment = 'center'
+}: {
+  src: string;
+  alt: string;
+  field?: Field;
+  onSizeChange?: (width: number, height: number) => void;
+  onPositionChange?: (x: number, y: number) => void;
+  alignment?: string;
+}) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [, setResizeHandle] = useState<string>(''); // resizeHandle utilisé pour debug future
+
+  const customWidth = field?.validation?.image_width;
+  const customHeight = field?.validation?.image_height;
+  const positionX = field?.validation?.image_position_x ?? 0;
+  const positionY = field?.validation?.image_position_y ?? 0;
+  const ratioLocked = field?.validation?.ratio_locked ?? true;
+
+  // Calculer les dimensions d'affichage
+  const currentWidth = customWidth || (imgRef.current?.naturalWidth ?? 300);
+  const currentHeight = customHeight || (imgRef.current?.naturalHeight ?? 200);
+  const aspectRatio = currentWidth / currentHeight;
+
+  const alignClass = alignment === 'left' ? 'justify-start' :
+                    alignment === 'right' ? 'justify-end' : 'justify-center';
+
+  const imageStyle: React.CSSProperties = {
+    width: currentWidth + 'px',
+    height: currentHeight + 'px',
+    transform: `translate(${positionX}px, ${positionY}px)`
+  };
+
+  const handleMouseDown = (e: React.MouseEvent, handle: string) => {
+    e.preventDefault();
+    setIsResizing(true);
+    setResizeHandle(handle);
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = currentWidth;
+    const startHeight = currentHeight;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+
+      let newWidth = startWidth;
+      let newHeight = startHeight;
+
+      // Calculer les nouvelles dimensions selon la poignée
+      switch (handle) {
+        case 'nw': // Coin nord-ouest
+          newWidth = startWidth - deltaX;
+          newHeight = ratioLocked ? newWidth / aspectRatio : startHeight - deltaY;
+          break;
+        case 'ne': // Coin nord-est
+          newWidth = startWidth + deltaX;
+          newHeight = ratioLocked ? newWidth / aspectRatio : startHeight - deltaY;
+          break;
+        case 'sw': // Coin sud-ouest
+          newWidth = startWidth - deltaX;
+          newHeight = ratioLocked ? newWidth / aspectRatio : startHeight + deltaY;
+          break;
+        case 'se': // Coin sud-est
+          newWidth = startWidth + deltaX;
+          newHeight = ratioLocked ? newWidth / aspectRatio : startHeight + deltaY;
+          break;
+        case 'n': // Milieu nord
+          if (!ratioLocked) {
+            newHeight = startHeight - deltaY;
+          }
+          break;
+        case 's': // Milieu sud
+          if (!ratioLocked) {
+            newHeight = startHeight + deltaY;
+          }
+          break;
+        case 'w': // Milieu ouest
+          newWidth = startWidth - deltaX;
+          if (ratioLocked) {
+            newHeight = newWidth / aspectRatio;
+          }
+          break;
+        case 'e': // Milieu est
+          newWidth = startWidth + deltaX;
+          if (ratioLocked) {
+            newHeight = newWidth / aspectRatio;
+          }
+          break;
+      }
+
+      // Contraintes de taille minimale/maximale
+      newWidth = Math.max(50, Math.min(1200, newWidth));
+      newHeight = Math.max(30, Math.min(800, newHeight));
+
+      // Appliquer les nouvelles dimensions
+      if (onSizeChange) {
+        onSizeChange(Math.round(newWidth), Math.round(newHeight));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      setResizeHandle('');
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleImageDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startPosX = positionX;
+    const startPosY = positionY;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+
+      const newX = startPosX + deltaX;
+      const newY = startPosY + deltaY;
+
+      if (onPositionChange) {
+        onPositionChange(newX, newY);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleStyle = "absolute w-2 h-2 bg-blue-500 border border-white rounded-full shadow-sm hover:bg-blue-600 cursor-pointer";
+
+  return (
+    <div className={`flex ${alignClass}`}>
+      <div
+        className="relative inline-block group"
+        style={{ minWidth: '50px', minHeight: '30px' }}
+      >
+        {/* Image */}
+        <img
+          ref={imgRef}
+          src={src}
+          alt={alt}
+          style={imageStyle}
+          className={`rounded-md object-contain select-none ${isResizing ? 'cursor-grabbing' : 'cursor-default'}`}
+          draggable={false}
+        />
+
+        {/* Poignées de redimensionnement - visibles au hover */}
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          {/* Coins */}
+          <div
+            className={`${handleStyle} -top-1 -left-1 cursor-nw-resize`}
+            onMouseDown={(e) => handleMouseDown(e, 'nw')}
+          />
+          <div
+            className={`${handleStyle} -top-1 -right-1 cursor-ne-resize`}
+            onMouseDown={(e) => handleMouseDown(e, 'ne')}
+          />
+          <div
+            className={`${handleStyle} -bottom-1 -left-1 cursor-sw-resize`}
+            onMouseDown={(e) => handleMouseDown(e, 'sw')}
+          />
+          <div
+            className={`${handleStyle} -bottom-1 -right-1 cursor-se-resize`}
+            onMouseDown={(e) => handleMouseDown(e, 'se')}
+          />
+
+          {/* Milieux des côtés */}
+          <div
+            className={`${handleStyle} -top-1 left-1/2 -translate-x-1/2 ${ratioLocked ? 'cursor-not-allowed opacity-50' : 'cursor-n-resize'}`}
+            onMouseDown={(e) => !ratioLocked && handleMouseDown(e, 'n')}
+          />
+          <div
+            className={`${handleStyle} -bottom-1 left-1/2 -translate-x-1/2 ${ratioLocked ? 'cursor-not-allowed opacity-50' : 'cursor-s-resize'}`}
+            onMouseDown={(e) => !ratioLocked && handleMouseDown(e, 's')}
+          />
+          <div
+            className={`${handleStyle} top-1/2 -left-1 -translate-y-1/2 cursor-w-resize`}
+            onMouseDown={(e) => handleMouseDown(e, 'w')}
+          />
+          <div
+            className={`${handleStyle} top-1/2 -right-1 -translate-y-1/2 cursor-e-resize`}
+            onMouseDown={(e) => handleMouseDown(e, 'e')}
+          />
+        </div>
+
+        {/* Indicateur de verrouillage du ratio */}
+        {ratioLocked && (
+          <div className="absolute -top-6 left-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="flex items-center gap-1 text-xs text-blue-600 font-medium bg-white/90 backdrop-blur px-2 py-1 rounded shadow-sm">
+              🔒 Ratio verrouillé
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Affichage du contenu créateur */
+function CreatorContent({ type, mediaUrl, alignment, field, compact = false, preview = false, globalStyle, onSizeChange, onPositionChange }: {
+  type: 'image' | 'video' | 'file';
+  mediaUrl: string;
+  alignment: string;
+  field?: Field;
+  compact?: boolean;
+  preview?: boolean;
+  globalStyle?: any;
+  onSizeChange?: (width: number, height: number) => void;
+  onPositionChange?: (x: number, y: number) => void;
+}) {
+  const alignClass = alignment === 'left' ? 'justify-start' :
+                    alignment === 'right' ? 'justify-end' : 'justify-center';
+
+  const sizeClass = compact ? 'max-h-24' : 'max-h-80';
+
+  // Appliquer le même style que les questions normales (comme dans FieldCard.tsx)
+  const SIZE_CLASSES: Record<string, string> = {
+    sm: 'text-sm',
+    md: 'text-base',
+    lg: 'text-lg',
+    xl: 'text-2xl'
+  };
+
+  const FONT_CLASSES: Record<string, string> = {
+    sans: 'font-sans',
+    display: 'font-sans',
+    serif: 'font-serif',
+    mono: 'font-mono'
+  };
+
+  const WEIGHT_CLASSES: Record<string, string> = {
+    normal: 'font-normal',
+    medium: 'font-medium',
+    bold: 'font-bold'
+  };
+
+  // Style uniforme pour les titres (même logique que FieldCard.tsx)
+  const resolvedStyle = { ...(globalStyle ?? {}), ...(field?.style ?? {}) };
+  const labelSize = SIZE_CLASSES[resolvedStyle.label_size ?? 'lg'];
+  const labelFont = FONT_CLASSES[resolvedStyle.font_family ?? 'sans'];
+  // Utiliser 'medium' comme poids par défaut pour correspondre aux questions normales
+  const labelWeight = WEIGHT_CLASSES[resolvedStyle.label_weight ?? 'medium'];
+  const labelClass = cn(labelSize, labelFont, labelWeight, resolvedStyle.label_italic && 'italic');
+  const labelInlineStyle: React.CSSProperties = {
+    color: resolvedStyle.label_color,
+    textAlign: resolvedStyle.label_align
+  };
+
+  if (type === 'image') {
+    const showTitle = field?.validation?.show_title ?? false;
+    const title = field?.label?.fr;
+
+    // En mode compact ou preview, utiliser une image simple
+    if (compact || preview) {
+      const customWidth = field?.validation?.image_width;
+      const customHeight = field?.validation?.image_height;
+      const imageStyle: React.CSSProperties = {};
+      if (customWidth) imageStyle.width = customWidth + 'px';
+      if (customHeight) imageStyle.height = customHeight + 'px';
+
+      // En mode compact : max-h-24, en mode preview : max-h-80 (taille normale)
+      const maxHeightClass = compact ? 'max-h-24' : 'max-h-80';
+
+      const imageElement = (
+        <div className={`flex ${alignClass}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={mediaUrl}
+            alt={title || 'Image'}
+            style={imageStyle}
+            className={customWidth || customHeight
+              ? 'rounded-md object-contain'
+              : `max-w-full rounded-md object-contain ${maxHeightClass}`
+            }
+          />
+        </div>
+      );
+
+      if (showTitle && title && preview) {
+        return (
+          <div className="space-y-3">
+            <div
+              className={cn(
+                'text-text-primary leading-snug',
+                labelClass
+              )}
+              style={labelInlineStyle}
+            >
+              {title}
+            </div>
+            {imageElement}
+          </div>
+        );
+      }
+
+      return imageElement;
+    }
+
+    // En mode builder normal, utiliser ResizableImage avec poignées
+    const imageElement = (
+      <ResizableImage
+        src={mediaUrl}
+        alt={title || 'Image'}
+        field={field}
+        alignment={alignment}
+        onSizeChange={onSizeChange}
+        onPositionChange={onPositionChange}
+      />
+    );
+
+    if (showTitle && title && preview) {
+      return (
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
+          {imageElement}
+        </div>
+      );
+    }
+
+    return imageElement;
+  }
+
+  if (type === 'video') {
+    const parsed = parseVideoEmbed(mediaUrl);
+    const showTitle = field?.validation?.show_title ?? false;
+    const title = field?.label?.fr;
+
+    if (!parsed) {
+      return (
+        <div className="rounded-md border border-dashed border-danger/40 bg-danger/5 px-3 py-2 text-xs text-danger">
+          URL non reconnue
+        </div>
+      );
+    }
+
+    // En mode compact : max-h-24, en mode preview ou normal : pas de limitation de hauteur
+    const heightClass = compact ? 'max-h-24' : '';
+
+    const videoElement = (
+      <div className={`aspect-video w-full overflow-hidden rounded-md border border-border bg-black ${heightClass}`}>
+        <iframe
+          src={parsed.embedUrl}
+          title={title || 'Vidéo'}
+          className="h-full w-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+    );
+
+    if (showTitle && title && preview) {
+      return (
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
+          {videoElement}
+        </div>
+      );
+    }
+
+    return videoElement;
+  }
+
+  if (type === 'file') {
+    // Extraire le nom du fichier avec la fonction helper
+    const fileName = extractFileName(mediaUrl, 'Fichier téléchargé');
+    const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
+
+    // Détection du type de fichier et configuration de l'apparence
+    const getFileConfig = (extension: string) => {
+      switch (extension) {
+        case 'pdf':
+          return {
+            icon: '🗎',
+            color: 'text-red-600',
+            bgColor: 'bg-red-50 border-red-200',
+            type: 'PDF',
+            iconColor: '#DC2626'
+          };
+        case 'doc':
+        case 'docx':
+          return {
+            icon: '🗎',
+            color: 'text-blue-600',
+            bgColor: 'bg-blue-50 border-blue-200',
+            type: 'DOCX',
+            iconColor: '#2563EB'
+          };
+        case 'xls':
+        case 'xlsx':
+          return {
+            icon: '🗎',
+            color: 'text-green-600',
+            bgColor: 'bg-green-50 border-green-200',
+            type: 'XLSX',
+            iconColor: '#059669'
+          };
+        case 'ppt':
+        case 'pptx':
+          return {
+            icon: '🗎',
+            color: 'text-orange-600',
+            bgColor: 'bg-orange-50 border-orange-200',
+            type: 'PPTX',
+            iconColor: '#EA580C'
+          };
+        case 'zip':
+        case 'rar':
+        case '7z':
+          return {
+            icon: '🗀',
+            color: 'text-purple-600',
+            bgColor: 'bg-purple-50 border-purple-200',
+            type: 'ZIP',
+            iconColor: '#9333EA'
+          };
+        case 'txt':
+          return {
+            icon: '🗎',
+            color: 'text-gray-600',
+            bgColor: 'bg-gray-50 border-gray-200',
+            type: 'TXT',
+            iconColor: '#6B7280'
+          };
+        case 'csv':
+          return {
+            icon: '🗎',
+            color: 'text-green-600',
+            bgColor: 'bg-green-50 border-green-200',
+            type: 'CSV',
+            iconColor: '#059669'
+          };
+        default:
+          return {
+            icon: '🗎',
+            color: 'text-gray-600',
+            bgColor: 'bg-gray-50 border-gray-200',
+            type: 'FILE',
+            iconColor: '#6B7280'
+          };
+      }
+    };
+
+    const fileConfig = getFileConfig(fileExt);
+
+    return (
+      <div className={`relative rounded-xl border-2 p-4 transition-all hover:shadow-md ${fileConfig.bgColor} w-full`}>
+        {/* Coin avec type de fichier */}
+        <div className="absolute -top-1 -right-1 rounded-md bg-gray-600 px-2 py-0.5 text-xs font-semibold text-white shadow-sm">
+          {fileConfig.type}
+        </div>
+
+        {/* Contenu principal */}
+        <div className="flex items-start gap-3 pt-2">
+          {/* Icône du fichier */}
+          <div className="flex-shrink-0">
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 32 32"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <rect x="6" y="4" width="16" height="22" rx="2" fill={fileConfig.iconColor}/>
+              <path d="M18 4v6h4l-4-6z" fill="white" fillOpacity="0.8"/>
+              <rect x="9" y="14" width="10" height="1" fill="white" fillOpacity="0.7"/>
+              <rect x="9" y="17" width="8" height="1" fill="white" fillOpacity="0.7"/>
+              <rect x="9" y="20" width="6" height="1" fill="white" fillOpacity="0.7"/>
+            </svg>
+          </div>
+
+          {/* Informations du fichier */}
+          <div className="flex-1 min-w-0">
+            <h4 className={`font-medium text-sm leading-tight mb-1 ${fileConfig.color} truncate`}>
+              {fileName.replace(/\.[^/.]+$/, "")}
+            </h4>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">
+              {fileConfig.type} • {mediaUrl.startsWith('data:') ? 'Téléchargé' : 'URL'}
+            </p>
+          </div>
+
+          {/* Bouton de téléchargement */}
+          {mediaUrl.startsWith('data:') && (
+            <button
+              type="button"
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = mediaUrl;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+              className="flex-shrink-0 rounded-full p-2 text-gray-400 hover:bg-white hover:text-gray-600 transition-all"
+              title="Télécharger le fichier"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 
 function MatrixField({ field, preview }: { field: Field; preview: boolean }) {
   const rows = field.rows ?? [];
@@ -910,6 +1943,387 @@ function MatrixField({ field, preview }: { field: Field; preview: boolean }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Composant pour champs texte court avec compteur de caractères */
+function ShortTextWithCounter({ field, placeholder, required, preview }: {
+  field: Field;
+  placeholder: string;
+  required: boolean;
+  preview: boolean;
+}) {
+  const [value, setValue] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState('none');
+  const [touched, setTouched] = useState(false);
+  const responseType = field.validation?.response_type ?? 'text';
+
+  // Pour les champs texte
+  if (responseType === 'text') {
+    const maxLength = field.validation?.max ?? LIMITS.SHORT_TEXT_MAX_CHARS;
+    const currentLength = value.length;
+    const isNearLimit = currentLength > maxLength * 0.8;
+    const isAtLimit = currentLength >= maxLength;
+
+    return (
+      <div className="space-y-1.5">
+        <AutoTextarea
+          name={field.id}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          minRows={1}
+          required={required && !preview}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          disabled={preview}
+          className={cn(
+            'w-full rounded-md border border-border-strong bg-bg-base px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none break-words',
+            preview && 'disabled:cursor-default disabled:opacity-100',
+            isAtLimit && !preview && 'border-orange-400 focus:border-orange-400'
+          )}
+          style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
+        />
+
+        {!preview && (
+          <div className="flex justify-between text-xs">
+            <span className="text-text-tertiary">
+              {currentLength}/{maxLength} caractères
+            </span>
+            {isNearLimit && (
+              <span className={cn(
+                'font-medium',
+                isAtLimit ? 'text-danger' : 'text-orange-600'
+              )}>
+                {isAtLimit ? 'Limite atteinte' : 'Proche de la limite'}
+              </span>
+            )}
+          </div>
+        )}
+
+        {preview && (
+          <p className="text-xs text-text-tertiary">
+            Maximum {maxLength} caractères
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Pour les champs numériques (entier ou décimal)
+  const min = field.validation?.min;
+  const max = field.validation?.max;
+  const unit = field.validation?.unit ?? 'none';
+  const userCanChooseUnit = field.validation?.user_can_choose_unit ?? false;
+  const maxDecimals = field.validation?.max_decimals ?? 2;
+
+  // Validation de la plage numérique
+  let rangeError: string | null = null;
+  if (touched && value && !preview) {
+    const numValue = parseFloat(value);
+    if (!isNaN(numValue)) {
+      if (responseType === 'integer' && !Number.isInteger(numValue)) {
+        rangeError = 'Veuillez saisir un nombre entier.';
+      } else if (min !== undefined && numValue < min) {
+        rangeError = max !== undefined
+          ? `Choisir entre ${min} et ${max}.`
+          : `Minimum ${min}.`;
+      } else if (max !== undefined && numValue > max) {
+        rangeError = min !== undefined
+          ? `Choisir entre ${min} et ${max}.`
+          : `Maximum ${max}.`;
+      }
+    }
+  }
+
+  // Génération du placeholder dynamique
+  let dynamicPlaceholder = '';
+  if (responseType === 'integer') {
+    if (min !== undefined && max !== undefined) {
+      dynamicPlaceholder = `Nombre entier de ${min} à ${max}`;
+    } else if (min !== undefined) {
+      dynamicPlaceholder = `Nombre entier (min. ${min})`;
+    } else if (max !== undefined) {
+      dynamicPlaceholder = `Nombre entier (max. ${max})`;
+    } else {
+      dynamicPlaceholder = 'Nombre entier';
+    }
+  } else if (responseType === 'decimal') {
+    if (min !== undefined && max !== undefined) {
+      dynamicPlaceholder = `Nombre de ${min} à ${max}`;
+    } else if (min !== undefined) {
+      dynamicPlaceholder = `Nombre (min. ${min})`;
+    } else if (max !== undefined) {
+      dynamicPlaceholder = `Nombre (max. ${max})`;
+    } else {
+      dynamicPlaceholder = 'Nombre décimal';
+    }
+  }
+
+  // Pour les champs numériques, toujours utiliser le placeholder dynamique
+  const finalPlaceholder = responseType === 'text' ? (placeholder || dynamicPlaceholder) : dynamicPlaceholder;
+
+  // Mappage des unités
+  const unitLabels = {
+    none: '',
+    euro: '€',
+    dollar: '$',
+    pound: '£',
+    rupee: 'Rs',
+    mur: 'MUR',
+    kg: 'kg',
+    g: 'g',
+    lb: 'lb',
+    cm: 'cm',
+    m: 'm',
+    ft: 'ft',
+    in: 'in',
+    miles: 'mi',
+    arpent: 'arp',
+    percent: '%'
+  };
+
+  const unitOptions = [
+    { value: 'none', label: 'Choisir' },
+    { value: 'euro', label: '€ Euro' },
+    { value: 'dollar', label: '$ Dollar' },
+    { value: 'pound', label: '£ Livre' },
+    { value: 'rupee', label: 'Rs Roupie' },
+    { value: 'mur', label: 'MUR Roupie mauricienne' },
+    { value: 'kg', label: 'kg' },
+    { value: 'g', label: 'g' },
+    { value: 'lb', label: 'lb (livre)' },
+    { value: 'cm', label: 'cm' },
+    { value: 'm', label: 'm' },
+    { value: 'ft', label: 'ft (pied)' },
+    { value: 'in', label: 'in (pouce)' },
+    { value: 'miles', label: 'miles' },
+    { value: 'arpent', label: 'arpent' },
+    { value: 'percent', label: '%' }
+  ];
+
+  // Validation de l'unité
+  const unitRequired = userCanChooseUnit && !preview;
+  const unitError = unitRequired && touched && selectedUnit === 'none';
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-2">
+        <input
+          name={field.id}
+          type="number"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => setTouched(true)}
+          required={required && !preview}
+          min={min}
+          max={max}
+          step={responseType === 'decimal' ? Math.pow(0.1, maxDecimals) : 1}
+          placeholder={finalPlaceholder}
+          disabled={preview}
+          className={cn(
+            'flex-1 rounded-md border border-border-strong bg-bg-base px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none',
+            preview && 'disabled:cursor-default disabled:opacity-100',
+            rangeError ? 'border-danger focus:border-danger' : ''
+          )}
+        />
+
+        {/* Affichage de l'unité */}
+        {unit !== 'none' && !userCanChooseUnit && (
+          <div className="flex shrink-0 items-center rounded-md bg-bg-elevated px-3 py-2 text-sm text-text-secondary border border-border">
+            {unitLabels[unit as keyof typeof unitLabels]}
+          </div>
+        )}
+
+        {/* Sélecteur d'unité pour l'utilisateur */}
+        {userCanChooseUnit && !preview && (
+          <select
+            value={selectedUnit}
+            onChange={(e) => {
+              setSelectedUnit(e.target.value);
+              setTouched(true);
+            }}
+            onBlur={() => setTouched(true)}
+            required
+            className={cn(
+              "shrink-0 rounded-md border bg-bg-base px-3 py-2 text-sm text-text-primary focus:outline-none",
+              unitError
+                ? "border-red-500 focus:border-red-500"
+                : "border-border-strong focus:border-accent"
+            )}
+          >
+            {unitOptions.map((option) => (
+              <option key={option.value} value={option.value} disabled={option.value === 'none'}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {/* Message d'erreur pour l'unité */}
+      {unitError && (
+        <p className="text-xs text-red-500">
+          Veuillez choisir une unité
+        </p>
+      )}
+
+      {/* Info validation pour preview */}
+      {preview && (min !== undefined || max !== undefined) && (
+        <p className="text-xs text-text-tertiary">
+          {min !== undefined && max !== undefined ? `Entre ${min} et ${max}` :
+           min !== undefined ? `Minimum ${min}` :
+           `Maximum ${max}`}
+          {unit !== 'none' && ` (unité: ${unitLabels[unit as keyof typeof unitLabels]})`}
+        </p>
+      )}
+
+      {/* Message d'erreur de validation de plage */}
+      {rangeError && <p className="text-xs text-danger">{rangeError}</p>}
+    </div>
+  );
+}
+
+/** Composant pour champs texte long avec compteur de caractères */
+function LongTextWithCounter({ field, placeholder, required, preview }: {
+  field: Field;
+  placeholder: string;
+  required: boolean;
+  preview: boolean;
+}) {
+  const [value, setValue] = useState('');
+  const maxLength = field.validation?.max ?? LIMITS.LONG_TEXT_MAX_CHARS;
+  const currentLength = value.length;
+  const isNearLimit = currentLength > maxLength * 0.8;
+  const isAtLimit = currentLength >= maxLength;
+
+  return (
+    <div className="space-y-1.5">
+      <AutoTextarea
+        name={field.id}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        minRows={3}
+        required={required && !preview}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        disabled={preview}
+        className={cn(
+          'w-full rounded-md border border-border-strong bg-bg-base px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none break-words',
+          preview && 'disabled:cursor-default disabled:opacity-100',
+          isAtLimit && !preview && 'border-orange-400 focus:border-orange-400'
+        )}
+        style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
+      />
+
+      {/* Compteur pour répondants seulement */}
+      {!preview && (
+        <div className="flex justify-between text-xs">
+          <span className="text-text-tertiary">
+            {currentLength}/{maxLength} caractères
+          </span>
+          {isNearLimit && (
+            <span className={cn(
+              'font-medium',
+              isAtLimit ? 'text-danger' : 'text-orange-600'
+            )}>
+              {isAtLimit ? 'Limite atteinte' : 'Proche de la limite'}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Info limite pour mode preview */}
+      {preview && (
+        <p className="text-xs text-text-tertiary">
+          Maximum {maxLength} caractères
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Composant pour champ number avec validation de plage */
+function NumberInputWithValidation({ field, placeholder, required, preview, baseInput }: {
+  field: Field;
+  placeholder: string;
+  required: boolean;
+  preview: boolean;
+  baseInput: string;
+}) {
+  const [value, setValue] = useState('');
+  const [touched, setTouched] = useState(false);
+  const min = field.validation?.min;
+  const max = field.validation?.max;
+
+  // Mappage des unités
+  const unitLabels = {
+    none: '',
+    euro: '€',
+    dollar: '$',
+    pound: '£',
+    rupee: 'Rs',
+    mur: 'MUR',
+    kg: 'kg',
+    g: 'g',
+    lb: 'lb',
+    cm: 'cm',
+    m: 'm',
+    ft: 'ft',
+    in: 'in',
+    miles: 'mi',
+    arpent: 'arp',
+    percent: '%'
+  };
+
+  // Validation de la plage numérique
+  let rangeError: string | null = null;
+  if (touched && value && !preview) {
+    const numValue = parseFloat(value);
+    if (!isNaN(numValue)) {
+      if (min !== undefined && numValue < min) {
+        rangeError = max !== undefined
+          ? `Choisir entre ${min} et ${max}.`
+          : `Minimum ${min}.`;
+      } else if (max !== undefined && numValue > max) {
+        rangeError = min !== undefined
+          ? `Choisir entre ${min} et ${max}.`
+          : `Maximum ${max}.`;
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-1">
+      <input
+        type="number"
+        name={field.id}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => setTouched(true)}
+        required={required && !preview}
+        className={cn(
+          baseInput,
+          rangeError ? 'border-danger focus:border-danger' : ''
+        )}
+        placeholder={placeholder}
+        min={min}
+        max={max}
+        disabled={preview}
+      />
+
+      {/* Info validation pour preview */}
+      {preview && (min !== undefined || max !== undefined) && (
+        <p className="text-xs text-text-tertiary">
+          {min !== undefined && max !== undefined ? `Entre ${min} et ${max}` :
+           min !== undefined ? `Minimum ${min}` :
+           `Maximum ${max}`}
+          {field.validation?.unit !== 'none' && field.validation?.unit && ` (unité: ${unitLabels[field.validation.unit as keyof typeof unitLabels]})`}
+        </p>
+      )}
+
+      {/* Message d'erreur de validation de plage */}
+      {rangeError && <p className="text-xs text-danger">{rangeError}</p>}
     </div>
   );
 }
