@@ -1,10 +1,11 @@
 'use client';
 
-import { Layout, Circle } from 'lucide-react';
+import { Layout, Circle, Move } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
 import type { FormTheme } from '@/types';
 import { cn } from '@/lib/utils';
 
-
+type HandleId = 'tl' | 'tm' | 'tr' | 'ml' | 'mr' | 'bl' | 'bm' | 'br';
 
 interface Props {
   theme: FormTheme;
@@ -15,10 +16,282 @@ interface Props {
   preview?: boolean;
 }
 
+// Composant ResizeHandles — 8 poignées hors du overflow:hidden
+interface ResizeHandlesProps {
+  onResizeStart: (e: React.MouseEvent, handle: HandleId) => void;
+}
+
+function ResizeHandles({ onResizeStart }: ResizeHandlesProps) {
+  const handleStyle = {
+    position: 'absolute' as const,
+    width: '12px',
+    height: '12px',
+    background: 'white',
+    border: '2.5px solid var(--mooove-cyan)',
+    borderRadius: '3px',
+    zIndex: 30
+  };
+
+  return (
+    <>
+      {/* Top row */}
+      <div
+        onMouseDown={(e) => onResizeStart(e, 'tl')}
+        className="cursor-nwse-resize"
+        style={{ ...handleStyle, top: '-6px', left: '-6px' }}
+      />
+      <div
+        onMouseDown={(e) => onResizeStart(e, 'tm')}
+        className="cursor-ns-resize"
+        style={{ ...handleStyle, top: '-6px', left: 'calc(50% - 6px)' }}
+      />
+      <div
+        onMouseDown={(e) => onResizeStart(e, 'tr')}
+        className="cursor-nesw-resize"
+        style={{ ...handleStyle, top: '-6px', right: '-6px' }}
+      />
+
+      {/* Middle row */}
+      <div
+        onMouseDown={(e) => onResizeStart(e, 'ml')}
+        className="cursor-ew-resize"
+        style={{ ...handleStyle, top: 'calc(50% - 6px)', left: '-6px' }}
+      />
+      <div
+        onMouseDown={(e) => onResizeStart(e, 'mr')}
+        className="cursor-ew-resize"
+        style={{ ...handleStyle, top: 'calc(50% - 6px)', right: '-6px' }}
+      />
+
+      {/* Bottom row */}
+      <div
+        onMouseDown={(e) => onResizeStart(e, 'bl')}
+        className="cursor-nesw-resize"
+        style={{ ...handleStyle, bottom: '-6px', left: '-6px' }}
+      />
+      <div
+        onMouseDown={(e) => onResizeStart(e, 'bm')}
+        className="cursor-ns-resize"
+        style={{ ...handleStyle, bottom: '-6px', left: 'calc(50% - 6px)' }}
+      />
+      <div
+        onMouseDown={(e) => onResizeStart(e, 'br')}
+        className="cursor-nwse-resize"
+        style={{ ...handleStyle, bottom: '-6px', right: '-6px' }}
+      />
+    </>
+  );
+}
+
 export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLogo, onThemeChange, preview = false }: Props) {
   const hasBanner = !!theme.banner_url;
   const hasLogo = !!theme.logo_url;
-  const logoShape = theme.logo_shape ?? 'circle'; // Défaut en rond
+  const logoShape = theme.logo_shape ?? 'circle';
+
+  // Deux refs
+  const outerRef = useRef<HTMLDivElement>(null);       // div externe — pour positionner les poignées
+  const containerRef = useRef<HTMLDivElement>(null);   // div interne — pour les calculs de drag pan
+
+  // State pour stocker les dimensions natives de l'image
+  const [natSize, setNatSize] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
+
+  // State pour stocker la largeur dynamique du conteneur (pour la réactivité mobile / redimensionnement)
+  const [containerW, setContainerW] = useState<number>(600);
+  const containerH = 160;
+
+  // ResizeObserver pour garder containerW parfaitement synchronisé en temps réel
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    setContainerW(containerRef.current.offsetWidth);
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerW(entry.contentRect.width);
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, [hasBanner]);
+
+  // Réinitialise le cadrage si l'URL de la bannière change (nouvelle image téléversée ou configurée)
+  const lastUrlRef = useRef<string | null | undefined>(theme.banner_url);
+  useEffect(() => {
+    if (theme.banner_url !== lastUrlRef.current) {
+      lastUrlRef.current = theme.banner_url;
+      setNatSize({ w: 1, h: 1 });
+      if (onThemeChange && theme.banner_url) {
+        onThemeChange({
+          banner_scale: undefined,
+          banner_position_x: undefined,
+          banner_position_y: undefined,
+        });
+      }
+    }
+  }, [theme.banner_url, onThemeChange]);
+
+  const scale = theme.banner_scale ?? 1;
+  const posXpct = theme.banner_position_x ?? 50;
+  const posYpct = theme.banner_position_y ?? 50;
+
+  const aspectRatio = natSize.w / natSize.h;
+  const imgW = containerW * scale;
+  const imgH = imgW / aspectRatio;  // hauteur proportionnelle au ratio natif
+  const imgX = (containerW * posXpct / 100) - (imgW / 2);
+  const imgY = (containerH * posYpct / 100) - (imgH / 2);
+
+  // Fonction utilitaire clamp
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+  // Initialisation du theme au mount si valeurs manquantes
+  useEffect(() => {
+    if (hasBanner && onThemeChange &&
+        (theme.banner_scale === undefined ||
+         theme.banner_position_x === undefined ||
+         theme.banner_position_y === undefined)) {
+      onThemeChange({
+        banner_scale: 1,
+        banner_position_x: 50,
+        banner_position_y: 50,
+      });
+    }
+  }, [hasBanner, theme.banner_scale, theme.banner_position_x, theme.banner_position_y, onThemeChange]);
+
+  // Recalcule le cadrage optimal quand le mode d'affichage (fit) change
+  const lastFitRef = useRef<string | undefined>(theme.banner_fit);
+  useEffect(() => {
+    if (!hasBanner || !onThemeChange || natSize.w === 1 || !containerRef.current) return;
+
+    if (lastFitRef.current !== theme.banner_fit) {
+      lastFitRef.current = theme.banner_fit;
+      
+      const cw = containerRef.current.offsetWidth;
+      const ch = containerRef.current.offsetHeight;
+      const nw = natSize.w;
+      const nh = natSize.h;
+      const fit = theme.banner_fit ?? 'cover';
+
+      if (fit === 'cover') {
+        const scaleX = cw / nw;
+        const scaleY = ch / nh;
+        const coverRatio = Math.max(scaleX, scaleY);
+        const imgW = Math.round(nw * coverRatio);
+        const imgH = Math.round(nh * coverRatio);
+        const posY = Math.round((ch - imgH) / 2);
+        const posX = Math.round((cw - imgW) / 2);
+        const scale = Math.round((imgW / cw) * 100) / 100;
+        onThemeChange({
+          banner_scale: scale,
+          banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
+          banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
+        });
+      } else if (fit === 'contain') {
+        // Pour "voir entière", l'image doit rentrer intégralement (largeur ET hauteur) sans rognage.
+        // On calcule les échelles pour la largeur et la hauteur, et on prend le minimum.
+        const scaleX = cw / nw;
+        const scaleY = ch / nh;
+        const containRatio = Math.min(scaleX, scaleY);
+        const imgW = Math.round(nw * containRatio);
+        const imgH = Math.round(nh * containRatio);
+        
+        // Centrage de l'image
+        const posX = Math.round((cw - imgW) / 2);
+        const posY = Math.round((ch - imgH) / 2);
+        
+        // Convertit la largeur d'affichage en scale (comme imgW = cw * scale)
+        const scale = Math.round((imgW / cw) * 100) / 100;
+        
+        onThemeChange({
+          banner_scale: Math.max(0.05, scale),
+          banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
+          banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
+        });
+      }
+    }
+  }, [theme.banner_fit, hasBanner, natSize, onThemeChange]);
+
+  // Logique drag PAN (déplacer l'image)
+  const handlePanStart = (e: React.MouseEvent) => {
+    if (!onThemeChange || !containerRef.current) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const ox = imgX;
+    const oy = imgY;
+
+    const onMove = (ev: MouseEvent) => {
+      const newX = ox + (ev.clientX - sx);
+      const newY = oy + (ev.clientY - sy);
+
+      // Conversion px → % (source de vérité)
+      // posX% = ((imgX + imgW/2) / containerW) * 100
+      const newPosX = Math.round(((newX + imgW / 2) / containerW) * 100);
+      const newPosY = Math.round(((newY + imgH / 2) / containerH) * 100);
+
+      onThemeChange({
+        banner_position_x: Math.min(100, Math.max(0, newPosX)),
+        banner_position_y: Math.min(100, Math.max(0, newPosY)),
+      });
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  // Logique RESIZE (poignées)
+  const handleResizeStart = (e: React.MouseEvent, handle: HandleId) => {
+    if (!onThemeChange || !containerRef.current) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const snap = { x: imgX, y: imgY, w: imgW, h: imgH };
+
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - sx;
+      const dy = ev.clientY - sy;
+      let { x, y, w, h } = snap;
+
+      switch(handle) {
+        case 'tl': x+=dx; y+=dy; w-=dx; h-=dy; break;
+        case 'tm':          y+=dy;        h-=dy; break;
+        case 'tr':          y+=dy; w+=dx; h-=dy; break;
+        case 'ml': x+=dx;         w-=dx;         break;
+        case 'mr':                w+=dx;         break;
+        case 'bl': x+=dx;         w-=dx; h+=dy;  break;
+        case 'bm':                       h+=dy;  break;
+        case 'br':                w+=dx; h+=dy;  break;
+      }
+
+      // Taille minimum
+      if (w < 100 || h < 80) return;
+
+      // Conversion taille → scale avant onThemeChange
+      const newScale = Math.round((w / containerW) * 100) / 100;  // arrondi 2 décimales
+      onThemeChange({
+        banner_scale: Math.min(3, Math.max(0.05, newScale))
+      });
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   // En mode preview, si aucune image n'est définie, le header est invisible
   if (preview && !hasBanner && !hasLogo) {
@@ -28,14 +301,18 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
   // Gestion de l'espacement : si logo seul en preview, on garde un espace pour le logo
   const needsLogoSpace = preview && hasLogo && !hasBanner;
 
+  // État d'édition pour la bannière
+  const isEditing = !preview && selectedElement === 'banner' && hasBanner;
+
   return (
     <div className={cn("relative", needsLogoSpace ? "mb-12 pt-24" : "mb-12")}>
       {/* Zone Bannière - ne se rend qu'en mode éditeur OU si elle a une URL */}
       {(!preview || hasBanner) && (
         <div
+          ref={outerRef}
           onClick={!preview ? onSelectBanner : undefined}
           className={cn(
-            'h-40 relative overflow-hidden transition-colors',
+            'h-40 relative transition-colors',
             theme.banner_full_width
               ? 'w-screen ml-[calc(-50vw+50%)] mr-[calc(-50vw+50%)]'
               : 'w-full rounded-lg',
@@ -47,24 +324,117 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
         >
           {hasBanner ? (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={theme.banner_url!}
-                alt="Bannière"
-                className="w-full h-full object-cover transition-transform"
+              {/* Div interne — overflow:hidden, clip de l'image */}
+              <div
+                ref={containerRef}
+                className={cn(!theme.banner_full_width && 'rounded-lg')}
                 style={{
-                  objectFit: theme.banner_fit ?? 'cover',
-                  objectPosition: `${theme.banner_position_x ?? 50}% ${theme.banner_position_y ?? 50}%`,
-                  transform: `scale(${theme.banner_scale ?? 1})`
+                  overflow: 'hidden',
+                  position: 'relative',
+                  height: '160px'
                 }}
-              />
-              {/* Overlay de sélection en mode éditeur */}
-              {!preview && (
-                <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
-                  <div className="opacity-0 hover:opacity-100 bg-white/90 px-3 py-1 rounded-md text-sm text-text-primary">
-                    Cliquer pour modifier la bannière
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={theme.banner_url!}
+                  alt="Bannière"
+                  draggable={false}
+                  style={{
+                    position: 'absolute',
+                    left: imgX + 'px',
+                    top: imgY + 'px',
+                    width: imgW + 'px',
+                    height: imgH + 'px',
+                    objectFit: 'fill',  // pas de rognage CSS natif
+                    userSelect: 'none',
+                    pointerEvents: 'none',
+                  }}
+                  onLoad={(e) => {
+                    const el = e.currentTarget;
+                    const nw = el.naturalWidth;
+                    const nh = el.naturalHeight;
+                    setNatSize({ w: nw, h: nh });
+                    const cw = containerRef.current?.offsetWidth ?? 600;
+                    const ch = containerRef.current?.offsetHeight ?? 160;
+
+                    // Ne recalcule PAS si l'utilisateur a déjà ajusté manuellement
+                    // Détecte "premier chargement" = pas de scale sauvegardé ou scale === 1
+                    const isFirstLoad = !theme.banner_scale || theme.banner_scale === 1;
+                    if (!isFirstLoad || !onThemeChange) return;
+
+                    const fit = theme.banner_fit ?? 'cover';
+
+                    if (fit === 'cover') {
+                      const scaleX = cw / nw;
+                      const scaleY = ch / nh;
+                      const coverRatio = Math.max(scaleX, scaleY);
+                      const imgW = Math.round(nw * coverRatio);
+                      const imgH = Math.round(nh * coverRatio);
+                      const posY = Math.round((ch - imgH) / 2);
+                      const posX = Math.round((cw - imgW) / 2);
+                      const scale = Math.round((imgW / cw) * 100) / 100;
+                      onThemeChange({
+                        banner_scale: scale,
+                        banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
+                        banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
+                      });
+                    }
+
+                    if (fit === 'contain') {
+                      const scaleX = cw / nw;
+                      const scaleY = ch / nh;
+                      const containRatio = Math.min(scaleX, scaleY);
+                      const imgW = Math.round(nw * containRatio);
+                      const imgH = Math.round(nh * containRatio);
+                      const posX = Math.round((cw - imgW) / 2);
+                      const posY = Math.round((ch - imgH) / 2);
+                      const scale = Math.round((imgW / cw) * 100) / 100;
+                      onThemeChange({
+                        banner_scale: Math.max(0.05, scale),
+                        banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
+                        banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
+                      });
+                    }
+                  }}
+                />
+
+                {/* Zone de drag centrale */}
+                {isEditing && (
+                  <div
+                    onMouseDown={handlePanStart}
+                    className="absolute inset-0 cursor-grab active:cursor-grabbing"
+                    style={{ zIndex: 5 }}
+                  >
+                    {/* Icône de déplacement centrale */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div
+                        className="flex items-center justify-center"
+                        style={{
+                          width: '36px',
+                          height: '36px',
+                          backgroundColor: 'rgba(0,0,0,0.4)',
+                          borderRadius: '50%'
+                        }}
+                      >
+                        <Move className="h-5 w-5 text-white" />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Overlay de sélection simple en mode éditeur (non sélectionnée) */}
+                {!preview && selectedElement !== 'banner' && (
+                  <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
+                    <div className="opacity-0 hover:opacity-100 bg-white/90 px-3 py-1 rounded-md text-sm text-text-primary">
+                      Cliquer pour modifier la bannière
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Poignées ICI — en dehors du overflow:hidden */}
+              {isEditing && (
+                <ResizeHandles onResizeStart={handleResizeStart} />
               )}
             </>
           ) : (

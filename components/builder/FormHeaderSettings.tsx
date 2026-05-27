@@ -4,6 +4,7 @@ import { useRef } from 'react';
 import { Upload, X } from 'lucide-react';
 import type { FormTheme } from '@/types';
 import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 
 const MAX_IMAGE_BYTES = 1.5 * 1024 * 1024;
@@ -145,9 +146,9 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
                     </label>
                     <input
                       type="range"
-                      min={0.5}
+                      min={0.05}
                       max={3}
-                      step={0.1}
+                      step={0.05}
                       value={theme.banner_scale ?? 1}
                       onChange={(e) => onChange({ banner_scale: Number(e.target.value) })}
                       className="w-full accent-accent"
@@ -184,6 +185,21 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
                   </div>
                 </div>
               </Section>
+
+              {/* Bouton Réinitialiser */}
+              <div className="flex justify-end pt-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onChange({
+                    banner_scale: 1,
+                    banner_position_x: 50,
+                    banner_position_y: 50,
+                  })}
+                >
+                  Réinitialiser le cadrage
+                </Button>
+              </div>
             </>
           )}
         </div>
