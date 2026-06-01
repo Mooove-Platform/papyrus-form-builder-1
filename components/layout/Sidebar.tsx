@@ -71,8 +71,23 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
   // Suppression modal
   const [deletingWorkspace, setDeletingWorkspace] = useState<Workspace | null>(null);
 
+  // Liste de tous les formulaires Supabase pour filtrage par équipe en mode non-local
+  const [allForms, setAllForms] = useState<Form[]>([]);
+
   function loadWorkspaces(userId?: string) {
-    const list = getWorkspaces(userId);
+    let list: Workspace[] = [];
+    if (isLocal) {
+      list = getWorkspaces(userId);
+    } else {
+      list = (allTeams || []).map((t) => ({
+        id: t.id,
+        name: t.name,
+        scope: 'team',
+        is_deletable: false,
+        created_by: userId || '',
+        created_at: ''
+      }));
+    }
     setWorkspaces(list);
     
     // Ouvrir par défaut le premier workspace perso s'il n'y a aucun état d'ouverture
@@ -117,6 +132,28 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
     window.addEventListener('papyrus:workspaces-changed', handleWorkspacesChanged);
     return () => {
       window.removeEventListener('papyrus:workspaces-changed', handleWorkspacesChanged);
+    };
+  }, [isLocal]);
+
+  // Charger tous les formulaires Supabase en arrière-plan en mode non-local
+  useEffect(() => {
+    async function loadAllForms() {
+      if (!isLocal) {
+        try {
+          const { listForms } = await import('@/lib/store');
+          const formsList = await listForms();
+          setAllForms(formsList);
+        } catch (err) {
+          console.error("Failed to load forms in Sidebar:", err);
+        }
+      }
+    }
+    loadAllForms();
+
+    // Recharger sur évènement forms-changed
+    window.addEventListener('papyrus:forms-changed', loadAllForms);
+    return () => {
+      window.removeEventListener('papyrus:forms-changed', loadAllForms);
     };
   }, [isLocal]);
 
@@ -262,6 +299,9 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
   // Fonction pour créer un nouveau formulaire dans un workspace spécifique
   const handleCreateFormInWorkspace = async (workspaceId: string) => {
     try {
+      if (!isLocal) {
+        document.cookie = `papyrus:active-team-id=${workspaceId}; path=/; max-age=31536000; SameSite=Lax`;
+      }
       const newForm = await createForm('Nouveau formulaire', workspaceId);
       router.push(`/forms/${newForm.id}/edit`);
     } catch (err) {
@@ -390,7 +430,9 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
           <div className="space-y-1">
             {workspaces.map((ws) => {
               const isOpen = !!openAccordions[ws.id];
-              const forms = getWorkspaceForms(ws.id);
+              const forms = isLocal
+                ? getWorkspaceForms(ws.id)
+                : allForms.filter((f) => f.team_id === ws.id);
               const hasForms = forms.length > 0;
               const displayedForms = forms.slice(0, 5);
               const hasMoreForms = forms.length > 5;

@@ -39,6 +39,9 @@ export default function WorkspacePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = params.id;
+  const isLocal = process.env.NEXT_PUBLIC_LOCAL_MODE === 'true';
+
+  const [currentUserId, setCurrentUserId] = useState<string>('local-user');
 
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [forms, setForms] = useState<Form[]>([]);
@@ -62,24 +65,116 @@ export default function WorkspacePage() {
   const [workspaceNameInput, setWorkspaceNameInput] = useState('');
 
   // Charger les données du workspace et des formulaires
-  const loadWorkspaceData = () => {
-    const ws = getWorkspace(workspaceId);
-    if (!ws) {
-      toast.error('Espace de travail introuvable');
-      router.push('/dashboard');
-      return;
-    }
-    setWorkspace(ws);
-    setWorkspaceNameInput(ws.name);
+  const loadWorkspaceData = async () => {
+    if (isLocal) {
+      const ws = getWorkspace(workspaceId);
+      if (!ws) {
+        toast.error('Espace de travail introuvable');
+        router.push('/dashboard');
+        return;
+      }
+      setWorkspace(ws);
+      setWorkspaceNameInput(ws.name);
 
-    const wsForms = getWorkspaceForms(workspaceId);
-    setForms(wsForms);
+      const wsForms = getWorkspaceForms(workspaceId);
+      setForms(wsForms);
+    } else {
+      // Mode Supabase
+      try {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+        
+        // 1. Charger les infos de la team
+        const { data: team, error: teamError } = await supabase
+          .from('teams')
+          .select('*')
+          .eq('id', workspaceId)
+          .maybeSingle();
+
+        if (teamError || !team) {
+          toast.error('Espace de travail introuvable');
+          router.push('/dashboard');
+          return;
+        }
+
+        // 2. Charger les membres de la team
+        const { data: members = [] } = await supabase
+          .from('team_members')
+          .select('user_id, role, joined_at')
+          .eq('team_id', workspaceId);
+
+        // Récupérer les profils pour les emails
+        let membersWithEmail = [];
+        try {
+          const userIds = (members || []).map((m) => m.user_id);
+          const { data: profiles = [] } = await supabase
+            .from('profiles')
+            .select('id, email')
+            .in('id', userIds);
+          const emailMap = new Map((profiles || []).map((p) => [p.id, p.email]));
+          membersWithEmail = (members || []).map((m) => ({
+            ...m,
+            workspace_id: workspaceId,
+            email: emailMap.get(m.user_id) || `Membre (ID: ${m.user_id.slice(0, 8)}...)`,
+            name: emailMap.get(m.user_id)?.split('@')[0] || ''
+          }));
+        } catch {
+          membersWithEmail = (members || []).map((m) => ({
+            ...m,
+            workspace_id: workspaceId,
+            email: `Membre (ID: ${m.user_id.slice(0, 8)}...)`
+          }));
+        }
+
+        setWorkspace({
+          id: team.id,
+          name: team.name,
+          scope: 'team',
+          is_deletable: true,
+          created_by: '',
+          created_at: team.created_at,
+          members: membersWithEmail
+        });
+        setWorkspaceNameInput(team.name);
+
+        // 3. Charger les formulaires de la team
+        const { listForms } = await import('@/lib/store');
+        const allForms = await listForms();
+        setForms(allForms.filter((f) => f.team_id === workspaceId));
+      } catch (err) {
+        console.error("Failed to load workspace in Supabase mode:", err);
+        toast.error('Erreur lors du chargement de l\'espace');
+      }
+    }
   };
 
   useEffect(() => {
     loadWorkspaceData();
+    // Définir le cookie de l'équipe active
+    if (!isLocal) {
+      document.cookie = `papyrus:active-team-id=${workspaceId}; path=/; max-age=31536000; SameSite=Lax`;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
+
+  // Charger l'ID utilisateur réel si en mode Supabase pour la gestion des rôles
+  useEffect(() => {
+    async function loadUser() {
+      if (!isLocal) {
+        try {
+          const { createClient } = await import('@/lib/supabase/client');
+          const supabase = createClient();
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            setCurrentUserId(user.id);
+          }
+        } catch (error) {
+          console.error('Failed to load user session:', error);
+        }
+      }
+    }
+    loadUser();
+  }, [isLocal]);
 
   // Synchroniser l'onglet actif avec le paramètre d'URL s'il existe
   useEffect(() => {
@@ -90,7 +185,7 @@ export default function WorkspacePage() {
   }, [searchParams]);
 
   // Rôle de l'utilisateur actuel dans ce workspace
-  const currentUserMember = workspace?.members?.find((m) => m.user_id === 'local-user');
+  const currentUserMember = workspace?.members?.find((m) => m.user_id === currentUserId);
   const currentUserRole: WorkspaceRole =
     currentUserMember?.role || (workspace?.scope === 'personal' ? 'owner' : 'admin');
   const isAdminOrOwner = currentUserRole === 'owner' || currentUserRole === 'admin';
@@ -107,8 +202,17 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!workspace || !workspaceNameInput.trim() || workspaceNameInput === workspace.name) return;
 
-    const timer = setTimeout(() => {
-      updateWorkspace(workspace.id, { name: workspaceNameInput.trim() });
+    const timer = setTimeout(async () => {
+      if (isLocal) {
+        updateWorkspace(workspace.id, { name: workspaceNameInput.trim() });
+      } else {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+        await supabase
+          .from('teams')
+          .update({ name: workspaceNameInput.trim() })
+          .eq('id', workspace.id);
+      }
       toast.success('Nom enregistré avec succès !');
       // Déclencher un événement pour rafraîchir la sidebar
       window.dispatchEvent(new CustomEvent('papyrus:workspaces-changed'));
@@ -118,7 +222,7 @@ export default function WorkspacePage() {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [workspaceNameInput, workspace]);
+  }, [workspaceNameInput, workspace, isLocal]);
 
   if (!workspace) return null;
 
@@ -167,33 +271,44 @@ export default function WorkspacePage() {
   };
 
   // Actions membres
-  const handleInviteMember = (e: React.FormEvent) => {
+  const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim() || !inviteName.trim()) return;
 
     try {
-      // TODO: Supabase — envoyer invitation réelle via Resend
-      addMember({
-        user_id: `user-${Date.now()}`,
-        workspace_id: workspace.id,
-        role: inviteRole,
-        name: inviteName.trim(),
-        email: inviteEmail.trim().toLowerCase()
-      });
+      if (isLocal) {
+        addMember({
+          user_id: `user-${Date.now()}`,
+          workspace_id: workspace.id,
+          role: inviteRole,
+          name: inviteName.trim(),
+          email: inviteEmail.trim().toLowerCase()
+        });
+        toast.success(`Invitation simulée pour ${inviteEmail} !`);
+      } else {
+        const { addTeamMember } = await import('@/lib/store/supabase-forms');
+        await addTeamMember(workspace.id, inviteEmail.trim(), inviteRole as any);
+        toast.success(`Collaborateur ${inviteEmail} ajouté avec succès !`);
+      }
 
       setInviteEmail('');
       setInviteName('');
       setInviteRole('member');
       loadWorkspaceData();
-      toast.success(`Invitation simulée pour ${inviteEmail} !`);
     } catch (err) {
-      toast.error("Erreur lors de l'invitation");
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Erreur lors de l'invitation");
     }
   };
 
-  const handleUpdateRole = (userId: string, role: WorkspaceRole) => {
+  const handleUpdateRole = async (userId: string, role: WorkspaceRole) => {
     try {
-      updateMemberRole(workspace.id, userId, role);
+      if (isLocal) {
+        updateMemberRole(workspace.id, userId, role);
+      } else {
+        const { updateTeamMemberRole } = await import('@/lib/store/supabase-forms');
+        await updateTeamMemberRole(workspace.id, userId, role as any);
+      }
       loadWorkspaceData();
       toast.success('Rôle mis à jour avec succès');
     } catch (err) {
@@ -201,11 +316,16 @@ export default function WorkspacePage() {
     }
   };
 
-  const handleRemoveMemberConfirm = () => {
+  const handleRemoveMemberConfirm = async () => {
     if (!memberToRemove) return;
 
     try {
-      removeMember(workspace.id, memberToRemove.user_id);
+      if (isLocal) {
+        removeMember(workspace.id, memberToRemove.user_id);
+      } else {
+        const { deleteTeamMember } = await import('@/lib/store/supabase-forms');
+        await deleteTeamMember(workspace.id, memberToRemove.user_id);
+      }
       setMemberToRemove(null);
       loadWorkspaceData();
       toast.success('Collaborateur retiré.');
@@ -215,9 +335,15 @@ export default function WorkspacePage() {
   };
 
   // Actions Workspace Paramètres
-  const handleDeleteWorkspace = () => {
+  const handleDeleteWorkspace = async () => {
     try {
-      deleteWorkspace(workspace.id);
+      if (isLocal) {
+        deleteWorkspace(workspace.id);
+      } else {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+        await supabase.from('teams').delete().eq('id', workspace.id);
+      }
       setShowDeleteWorkspaceModal(false);
       toast.success('Workspace supprimé avec succès.');
       router.push('/dashboard');
