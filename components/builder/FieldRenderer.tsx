@@ -273,7 +273,18 @@ export function FieldRenderer({
       );
 
     case 'file':
-      return <MediaField field={field} preview={preview} required={required} type="file" onChange={onChange} globalStyle={globalStyle} />;
+      return (
+        <MediaField
+          field={field}
+          preview={preview}
+          required={required}
+          type="file"
+          onChange={onChange}
+          globalStyle={globalStyle}
+          value={value}
+          onValueChange={onValueChange}
+        />
+      );
 
     case 'matrix':
       return (
@@ -286,10 +297,32 @@ export function FieldRenderer({
       );
 
     case 'image':
-      return <MediaField field={field} preview={preview} required={required} type="image" onChange={onChange} globalStyle={globalStyle} />;
+      return (
+        <MediaField
+          field={field}
+          preview={preview}
+          required={required}
+          type="image"
+          onChange={onChange}
+          globalStyle={globalStyle}
+          value={value}
+          onValueChange={onValueChange}
+        />
+      );
 
     case 'video':
-      return <MediaField field={field} preview={preview} required={required} type="video" onChange={onChange} globalStyle={globalStyle} />;
+      return (
+        <MediaField
+          field={field}
+          preview={preview}
+          required={required}
+          type="video"
+          onChange={onChange}
+          globalStyle={globalStyle}
+          value={value}
+          onValueChange={onValueChange}
+        />
+      );
 
     case 'section_break':
     case 'statement':
@@ -1181,13 +1214,15 @@ function ModeSelector({ field, type, labels, onChange }: {
 }
 
 /** Composant unifié pour Image, Vidéo, Fichier avec modes créateur/répondant */
-function MediaField({ field, preview, required, type, onChange, globalStyle }: {
+function MediaField({ field, preview, required, type, onChange, globalStyle, value, onValueChange }: {
   field: Field;
   preview: boolean;
   required?: boolean;
   type: 'image' | 'video' | 'file';
   onChange?: (patch: Partial<Field>) => void;
   globalStyle?: any;
+  value?: any;
+  onValueChange?: (val: any) => void;
 }) {
   const creatorModeEnabled = field.validation?.creator_mode_enabled ?? false;
   const respondentModeEnabled = field.validation?.respondent_mode_enabled ?? false;
@@ -1201,8 +1236,10 @@ function MediaField({ field, preview, required, type, onChange, globalStyle }: {
     file: { creator: 'Ajouter un fichier', respondent: 'Demander un fichier' }
   };
 
-  // En mode preview : affiche seulement le contenu final
-  if (preview) {
+  // Une vue répondant finale (soit en preview dans le builder, soit côté public réel si onChange n'est pas passé)
+  const isRespondentView = preview || !onChange;
+
+  if (isRespondentView) {
     // Utiliser la même logique pour détecter les modes actifs
     const finalCreatorModePreview = creatorModeEnabled || (mediaUrl && !respondentModeEnabled);
     const finalRespondentModePreview = respondentModeEnabled;
@@ -1211,7 +1248,7 @@ function MediaField({ field, preview, required, type, onChange, globalStyle }: {
       <div className="space-y-4">
         {/* Contenu du créateur */}
         {finalCreatorModePreview && mediaUrl && (
-          <CreatorContent type={type} mediaUrl={mediaUrl} alignment={alignment} field={field} preview globalStyle={globalStyle} />
+          <CreatorContent type={type} mediaUrl={mediaUrl} alignment={alignment} field={field} preview={isRespondentView} globalStyle={globalStyle} />
         )}
 
         {/* Divider si les deux modes sont actifs */}
@@ -1225,7 +1262,10 @@ function MediaField({ field, preview, required, type, onChange, globalStyle }: {
             type={type}
             enabled={true}
             required={required}
-            preview={true}
+            preview={preview}
+            value={value}
+            onChange={onValueChange}
+            accept={field.validation?.accept?.join(', ')}
           />
         )}
       </div>
@@ -1235,16 +1275,15 @@ function MediaField({ field, preview, required, type, onChange, globalStyle }: {
   // DEBUG: Afficher les valeurs pour diagnostiquer
   console.log(`MediaField ${type}:`, { creatorModeEnabled, respondentModeEnabled, mediaUrl });
 
-  // TEMP: Force l'affichage de ModeSelector pour debug
+  // Si aucun mode n'est configuré (période de création initiale), afficher le sélecteur de mode
   if (!creatorModeEnabled && !respondentModeEnabled) {
     return <ModeSelector field={field} type={type} labels={labels[type]} onChange={onChange} />;
   }
 
-  // Si il y a du contenu mais aucun mode activé, activer automatiquement le mode créateur
   const finalCreatorMode = creatorModeEnabled || (mediaUrl && !respondentModeEnabled);
   const finalRespondentMode = respondentModeEnabled;
 
-  // Si au moins un mode est sélectionné, affiche seulement la zone active
+  // Si au moins un mode est sélectionné (mode builder actif), affiche seulement la zone active
   return (
     <div className="space-y-4">
       {/* Zone créateur active */}
@@ -1915,6 +1954,9 @@ function CreatorContent({ type, mediaUrl, alignment, field, compact = false, pre
   }
 
   if (type === 'file') {
+    const showTitle = field?.validation?.show_title ?? false;
+    const title = field?.label?.fr;
+
     // Extraire le nom du fichier avec la fonction helper
     const fileName = extractFileName(mediaUrl, 'Fichier téléchargé');
     const fileExt = fileName.split('.').pop()?.toLowerCase() || '';
@@ -1996,7 +2038,7 @@ function CreatorContent({ type, mediaUrl, alignment, field, compact = false, pre
 
     const fileConfig = getFileConfig(fileExt);
 
-    return (
+    const fileElement = (
       <div className={`relative rounded-xl border-2 p-4 transition-all hover:shadow-md ${fileConfig.bgColor} w-full`}>
         {/* Coin avec type de fichier */}
         <div className="absolute -top-1 -right-1 rounded-md bg-gray-600 px-2 py-0.5 text-xs font-semibold text-white shadow-sm">
@@ -2055,6 +2097,25 @@ function CreatorContent({ type, mediaUrl, alignment, field, compact = false, pre
         </div>
       </div>
     );
+
+    if (showTitle && title && preview) {
+      return (
+        <div className="space-y-3">
+          <div
+            className={cn(
+              'text-text-primary leading-snug',
+              labelClass
+            )}
+            style={labelInlineStyle}
+          >
+            {title}
+          </div>
+          {fileElement}
+        </div>
+      );
+    }
+
+    return fileElement;
   }
 
   return null;

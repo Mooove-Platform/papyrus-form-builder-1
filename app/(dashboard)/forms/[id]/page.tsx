@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -14,6 +14,7 @@ import {
   Edit3,
   ExternalLink,
   LayoutTemplate,
+  Link2,
   ListChecks,
   MoreHorizontal,
   Share2,
@@ -28,10 +29,12 @@ import {
   cloneForm,
   deleteForm,
   setAsTemplate,
-  unarchiveForm
+  unarchiveForm,
+  updateForm
 } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import type { Form } from '@/types';
+import type { Form, Field } from '@/types';
+import { createClient } from '@/lib/supabase/client';
 
 type Tab = 'overview' | 'responses' | 'share';
 
@@ -381,39 +384,197 @@ function OverviewTab({ form }: { form: Form }) {
 // Onglet Réponses — table brute + export
 // ============================================================================
 function ResponsesTab({ form }: { form: Form }) {
+  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchSubmissions() {
+      const supabase = createClient();
+      try {
+        const { data, error } = await supabase
+          .from('submissions')
+          .select('*')
+          .eq('form_id', form.id)
+          .order('completed_at', { ascending: false })
+          .limit(50);
+
+        if (error) throw error;
+        setSubmissions(data || []);
+      } catch (err) {
+        console.error('Failed to fetch submissions:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchSubmissions();
+  }, [form.id]);
+
+  const fields = (form.fields ?? []).filter(
+    (f) => f.type !== 'section_break' && f.type !== 'statement' && f.type !== 'image' && f.type !== 'video'
+  );
+
+  function renderResponseValue(field: Field, value: any) {
+    if (value === undefined || value === null || value === '') return '—';
+
+    // Résoudre les options pour les choix simples, multiples et dropdowns
+    if (['single_choice', 'multiple_choice', 'dropdown'].includes(field.type)) {
+      const getOptionLabel = (optId: string) => {
+        const option = field.options?.find((o: any) => o.id === optId);
+        return option ? (option.label.fr || option.label.en || optId) : optId;
+      };
+
+      if (Array.isArray(value)) {
+        return value.map(getOptionLabel).join(', ');
+      }
+      if (typeof value === 'string') {
+        // Au cas où les choix multiples sont stockés sous forme de chaîne à virgule
+        if (value.includes(',') && !field.options?.some((o: any) => o.id === value)) {
+          return value.split(',').map((v) => getOptionLabel(v.trim())).join(', ');
+        }
+        return getOptionLabel(value);
+      }
+    }
+
+    // Résoudre pour les matrices
+    if (field.type === 'matrix') {
+      if (typeof value === 'object') {
+        return Object.entries(value)
+          .map(([rowId, colId]) => {
+            const row = field.rows?.find((r: any) => r.id === rowId);
+            const col = field.options?.find((c: any) => c.id === colId as string);
+            const rowLabel = row ? (row.label.fr || row.label.en || rowId) : rowId;
+            const colLabel = col ? (col.label.fr || col.label.en || colId) : colId;
+            return `${rowLabel} : ${colLabel}`;
+          })
+          .join(' | ');
+      }
+    }
+
+    // Fallback standard
+    if (typeof value === 'object') {
+      if (Array.isArray(value)) {
+        return value.join(', ');
+      }
+      return JSON.stringify(value);
+    }
+    return String(value);
+  }
+
+  const handleExportExcel = () => {
+    import('xlsx').then((XLSX) => {
+      const data = submissions.map((sub) => {
+        const row: Record<string, any> = {};
+        fields.forEach((f) => {
+          const headerName = f.label.fr || 'Champ sans nom';
+          row[headerName] = renderResponseValue(f, sub.responses?.[f.id]);
+        });
+        row['Date de soumission'] = new Date(sub.completed_at).toLocaleString('fr-FR');
+        return row;
+      });
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Réponses');
+
+      const slugTitle = form.title
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)+/g, '');
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `${slugTitle}-reponses-${dateStr}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center papyrus-meta text-sm">
+        Chargement des réponses...
+      </div>
+    );
+  }
+
+  if (submissions.length === 0) {
+    return (
+      <div className="space-y-4">
+        <h2 className="font-display text-xl">Réponses brutes</h2>
+        <div className="rounded-lg border border-dashed border-border-strong bg-bg-surface p-12 text-center">
+          <ListChecks className="mx-auto h-10 w-10 text-text-tertiary" />
+          <h3 className="mt-4 font-display text-xl">Aucune réponse pour l&apos;instant</h3>
+          <p className="papyrus-meta mx-auto mt-1 max-w-md text-sm">
+            i. Partagez le lien de votre formulaire pour commencer à collecter des réponses.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl">Réponses brutes</h2>
+        <h2 className="font-display text-xl">
+          Réponses brutes ({submissions.length})
+        </h2>
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
             size="sm"
             iconLeft={<Download className="h-3.5 w-3.5" />}
-            disabled
-            title="Disponible quand des réponses seront collectées (v0.2)"
+            onClick={handleExportExcel}
           >
-            Export CSV
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            iconLeft={<Download className="h-3.5 w-3.5" />}
-            disabled
-            title="Disponible quand des réponses seront collectées (v0.2)"
-          >
-            Export XLSX
+            Exporter Excel
           </Button>
         </div>
       </div>
 
-      <div className="rounded-lg border border-dashed border-border-strong bg-bg-surface p-12 text-center">
-        <ListChecks className="mx-auto h-10 w-10 text-text-tertiary" />
-        <h3 className="mt-4 font-display text-xl">Aucune réponse pour l&apos;instant</h3>
-        <p className="papyrus-meta mx-auto mt-1 max-w-md text-sm">
-          i. La page publique &laquo;&nbsp;{form.slug}&nbsp;&raquo; arrive en v0.2. Une fois en ligne,
-          chaque soumission apparaîtra ici sous forme de ligne avec tri et filtres.
-        </p>
+      <div className="w-full overflow-x-auto rounded-lg border border-border bg-bg-surface">
+        <table className="w-full border-collapse text-left text-sm text-text-primary">
+          <thead className="border-b border-border bg-bg-elevated text-xs font-semibold uppercase text-text-secondary">
+            <tr>
+              <th className="px-4 py-3 min-w-[150px]">Date de soumission</th>
+              {fields.map((f) => (
+                <th key={f.id} className="px-4 py-3 min-w-[200px] max-w-[350px] truncate">
+                  {f.label.fr || 'Champ sans nom'}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {submissions.map((sub) => (
+              <tr key={sub.id} className="hover:bg-bg-elevated transition-colors">
+                <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-text-secondary">
+                  {new Date(sub.completed_at).toLocaleString('fr-FR')}
+                </td>
+                {fields.map((f) => {
+                  const val = sub.responses?.[f.id];
+                  const renderedVal = renderResponseValue(f, val);
+                  const isUrl = typeof renderedVal === 'string' && (renderedVal.startsWith('http://') || renderedVal.startsWith('https://'));
+
+                  return (
+                    <td key={f.id} className="px-4 py-3 max-w-[350px] truncate" title={renderedVal}>
+                      {isUrl ? (
+                        <a
+                          href={renderedVal}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:underline inline-flex items-center gap-1 font-medium"
+                        >
+                          Ouvrir le fichier ↗
+                        </a>
+                      ) : (
+                        renderedVal
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -424,12 +585,13 @@ function ResponsesTab({ form }: { form: Form }) {
 // ============================================================================
 function ShareTab({ form }: { form: Form }) {
   const [copied, setCopied] = useState<'link' | 'embed' | null>(null);
+  const [publishing, setPublishing] = useState(false);
 
-  // En local mode, on construit l'URL à partir de window.location
-  const publicUrl = typeof window !== 'undefined' ? `${window.location.origin}/f/${form.slug}` : `/f/${form.slug}`;
+  // En local mode ou production, on utilise la variable d'environnement ou le window.location
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+  const publicUrl = `${baseUrl}/f/${form.slug}`;
 
-  // QR code via api.qrserver.com — sans dépendance npm. Pourra être remplacé par
-  // une lib locale (qrcode.react) si on veut couper la dépendance externe.
+  // QR code via api.qrserver.com
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&data=${encodeURIComponent(publicUrl)}`;
 
   const embedSnippet = `<iframe src="${publicUrl}" width="100%" height="600" frameborder="0" style="border:none;"></iframe>`;
@@ -444,21 +606,51 @@ function ShareTab({ form }: { form: Form }) {
     }
   }
 
-  const isPublishable = form.status === 'published';
+  async function handlePublish() {
+    setPublishing(true);
+    try {
+      await updateForm(form.id, {
+        status: 'published',
+        published_at: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to publish form:', error);
+      alert('Erreur lors de la publication.');
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  if (form.status === 'draft') {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 rounded-lg border border-warning/40 bg-warning/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-warning font-medium">
+            i. Publiez le formulaire pour partager le lien
+          </div>
+          <Button
+            onClick={handlePublish}
+            disabled={publishing}
+          >
+            {publishing ? 'Publication...' : 'Publier maintenant'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {!isPublishable && (
+      {form.status === 'closed' && (
         <div className="rounded-md border border-warning/40 bg-warning/5 px-4 py-3 text-sm text-warning">
-          i. Ce formulaire est en {form.status === 'closed' ? 'archive' : 'brouillon'}. Il ne sera accessible
-          au public qu&apos;une fois <strong>publié</strong> (bouton « Publier » dans le builder).
+          i. Ce formulaire est archivé. Il ne sera plus accessible au public à moins de le repasser en brouillon.
         </div>
       )}
 
       {/* Lien direct */}
       <section className="rounded-lg border border-border bg-bg-surface p-5">
         <div className="mb-3 flex items-center gap-2">
-          <ExternalLink className="h-4 w-4 text-text-secondary" />
+          <Link2 className="h-4 w-4 text-text-secondary" />
           <h3 className="font-display text-lg">Lien direct</h3>
         </div>
         <div className="flex items-center gap-2">
@@ -471,10 +663,10 @@ function ShareTab({ form }: { form: Form }) {
           />
           <Button
             variant="secondary"
-            iconLeft={copied === 'link' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            iconLeft={copied === 'link' ? <Check className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
             onClick={() => copy(publicUrl, 'link')}
           >
-            {copied === 'link' ? 'Copié' : 'Copier'}
+            {copied === 'link' ? 'Copié !' : 'Copier le lien'}
           </Button>
         </div>
         <p className="papyrus-meta mt-2 text-xs">

@@ -7,6 +7,7 @@ import type { Field, FieldStyle, Form, FormTheme } from '@/types';
 import { FieldRenderer } from './FieldRenderer';
 import { FormHeader } from './FormHeader';
 import { SaveResumeBar } from './SaveResumeBar';
+import { FieldContext } from '../public/PublicFieldCard';
 import { getBackgroundStyle, getBannerStyle } from '@/lib/theme';
 import { getFieldIcon, isIconVisible } from '@/lib/field-icons';
 import { buildPages } from '@/lib/sections';
@@ -272,7 +273,11 @@ function PreviewFieldCard({
     );
   }
 
-  if (field.type === 'image' || field.type === 'video') {
+  const isRespondentUpload =
+    ['file', 'image', 'video'].includes(field.type) &&
+    field.validation?.respondent_mode_enabled === true;
+
+  if (['file', 'image', 'video'].includes(field.type) && !isRespondentUpload) {
     return (
       <div className={span}>
         <FieldRenderer field={field} preview={true} mobile={device === 'mobile'} />
@@ -311,13 +316,15 @@ function PreviewFieldCard({
     >
       <FieldQuestion field={field} theme={form.theme} globalStyle={form.theme.field_style} />
       <div className="mt-4">
-        <FieldRenderer
-          field={field}
-          preview={false}
-          mobile={device === 'mobile'}
-          value={responses[field.id]}
-          onValueChange={(val) => updateResponse(field.id, val)}
-        />
+        <FieldContext.Provider value={field}>
+          <FieldRenderer
+            field={field}
+            preview={false}
+            mobile={device === 'mobile'}
+            value={responses[field.id]}
+            onValueChange={(val) => updateResponse(field.id, val)}
+          />
+        </FieldContext.Provider>
       </div>
     </div>
   );
@@ -834,6 +841,10 @@ function FieldQuestion({
   theme?: FormTheme;
   globalStyle?: FieldStyle;
 }) {
+  const isRespondentUpload =
+    ['file', 'image', 'video'].includes(field.type) &&
+    field.validation?.respondent_mode_enabled === true;
+
   const style = { ...(globalStyle ?? {}), ...(field.style ?? {}) };
   const sizeClass = {
     sm: 'text-sm',
@@ -908,7 +919,10 @@ function FieldQuestion({
       </div>
       {field.description.fr && (
         <p 
-          className="papyrus-meta mt-1 text-sm break-words whitespace-pre-wrap"
+          className={cn(
+            "papyrus-meta mt-1 text-sm break-words whitespace-pre-wrap",
+            isRespondentUpload ? 'italic text-text-tertiary font-normal' : ''
+          )}
           style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
         >
           {field.description.fr}

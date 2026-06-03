@@ -29,8 +29,9 @@ import {
   initDefaultWorkspace,
   getWorkspaceForms
 } from '@/lib/store/local-workspaces';
-import type { Workspace, Form } from '@/types';
+import type { Workspace, Form, WorkspaceScope } from '@/types';
 import { Modal } from '@/components/ui/Modal';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/components/ui/Toast';
 import { createForm, createTeam, updateTeamName } from '@/lib/store';
@@ -75,6 +76,11 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
   const [workspaceMembers, setWorkspaceMembers] = useState<any[]>([]);
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [memberLoading, setMemberLoading] = useState(false);
+  const [sendEmailInvite, setSendEmailInvite] = useState(false);
+
+  // Modal de confirmation de suppression de membre
+  const [memberToRemove, setMemberToRemove] = useState<{ id: string; email: string } | null>(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
 
   // Menu contextuel formulaire actif
   const [activeFormMenuId, setActiveFormMenuId] = useState<string | null>(null);
@@ -92,7 +98,7 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
       list = (allTeams || []).map((t) => ({
         id: t.id,
         name: t.name,
-        scope: t.name === 'Mon espace' ? 'personal' : 'team',
+        scope: (t.name === 'Mon espace' ? 'personal' : 'team') as WorkspaceScope,
         is_deletable: t.name !== 'Mon espace',
         created_by: userId || '',
         created_at: ''
@@ -301,6 +307,7 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
     setMemberLoading(true);
 
     try {
+      // Ajouter le membre
       if (isLocal) {
         const { addMember } = await import('@/lib/store/local-workspaces');
         addMember({
@@ -314,9 +321,41 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
         const { addTeamMember } = await import('@/lib/store');
         await addTeamMember(managingWorkspace.id, newMemberEmail.trim(), 'member');
       }
+
+      // Envoyer l'email d'invitation si demandé
+      if (sendEmailInvite) {
+        try {
+          const response = await fetch(`/api/workspaces/${managingWorkspace.id}/invite`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              email: newMemberEmail.trim(),
+              workspaceName: managingWorkspace.name,
+              inviterName: userEmail || 'Un collaborateur'
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erreur lors de l\'envoi de l\'email');
+          }
+        } catch (emailError) {
+          console.warn('Email invitation failed:', emailError);
+          // N'interrompt pas le processus si l'email échoue
+          toast.error('Membre ajouté, mais l\'email d\'invitation n\'a pas pu être envoyé');
+        }
+      }
+
       setNewMemberEmail('');
+      setSendEmailInvite(false);
       await loadMembers(managingWorkspace.id);
-      toast.success('Membre invité avec succès !');
+
+      const message = sendEmailInvite
+        ? 'Membre invité et email envoyé avec succès !'
+        : 'Membre invité avec succès !';
+      toast.success(message);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Erreur lors de l'invitation");
@@ -325,23 +364,30 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
     }
   };
 
-  const handleRemoveMember = async (userId: string) => {
-    if (!managingWorkspace) return;
-    if (confirm('Retirer ce membre de cet espace de travail ?')) {
-      try {
-        if (isLocal) {
-          const { removeMember } = await import('@/lib/store/local-workspaces');
-          removeMember(managingWorkspace.id, userId);
-        } else {
-          const { deleteTeamMember } = await import('@/lib/store');
-          await deleteTeamMember(managingWorkspace.id, userId);
-        }
-        await loadMembers(managingWorkspace.id);
-        toast.success('Membre retiré.');
-      } catch (err) {
-        console.error(err);
-        toast.error('Erreur lors du retrait du membre');
+  const handleRemoveMember = (userId: string, userEmail: string) => {
+    setMemberToRemove({ id: userId, email: userEmail });
+  };
+
+  const confirmRemoveMember = async () => {
+    if (!managingWorkspace || !memberToRemove) return;
+    setRemoveLoading(true);
+
+    try {
+      if (isLocal) {
+        const { removeMember } = await import('@/lib/store/local-workspaces');
+        removeMember(managingWorkspace.id, memberToRemove.id);
+      } else {
+        const { deleteTeamMember } = await import('@/lib/store');
+        await deleteTeamMember(managingWorkspace.id, memberToRemove.id);
       }
+      await loadMembers(managingWorkspace.id);
+      toast.success('Membre retiré.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erreur lors du retrait du membre');
+    } finally {
+      setRemoveLoading(false);
+      setMemberToRemove(null);
     }
   };
 
@@ -599,23 +645,23 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
   };
 
   return (
-    <aside className="flex h-full w-96 flex-col border-r border-border bg-bg-surface select-none">
+    <aside className="flex h-full w-64 flex-col border-r border-border bg-bg-surface select-none">
       {/* Logo Papyrus */}
-      <div className="px-5 py-5">
+      <div className="px-4 py-3">
         <button
           onClick={() => router.push('/dashboard')}
-          className="flex items-center gap-3 text-left focus:outline-none w-full"
+          className="flex items-center gap-2 text-left focus:outline-none w-full"
         >
           {/* Carré P arrondi */}
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-mooove-navy text-white font-bold text-xl">
+          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-mooove-navy text-white font-bold text-sm">
             P
           </div>
           {/* Textes */}
           <div className="flex flex-col">
-            <div className="font-display text-2xl font-semibold text-text-primary leading-tight">
+            <div className="font-display text-base font-semibold text-text-primary leading-tight">
               Papyrus
             </div>
-            <div className="font-body text-lg text-text-tertiary leading-tight">
+            <div className="font-body text-xs text-text-tertiary leading-tight">
               by Mooove
             </div>
           </div>
@@ -623,9 +669,9 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
       </div>
 
       {/* Workspace Section */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2">
         <div>
-          <span className="block px-3 text-[11px] font-semibold uppercase tracking-[0.8px] text-text-tertiary mb-2">
+          <span className="block px-3 text-[11px] font-semibold uppercase tracking-[0.8px] text-text-tertiary mb-1">
             Espaces de travail
           </span>
 
@@ -649,15 +695,15 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
                       router.push(`/forms?workspace=${ws.id}`);
                     }}
                     className={cn(
-                      'flex items-center justify-between w-full px-4 h-14 text-xl font-medium cursor-pointer rounded-md transition hover:bg-bg-elevated text-text-secondary hover:text-text-primary',
+                      'flex items-center justify-between w-full px-3 h-8 text-sm font-medium cursor-pointer rounded-md transition hover:bg-bg-elevated text-text-secondary hover:text-text-primary',
                       pathname === '/forms' && activeWorkspaceId === ws.id && 'bg-bg-elevated text-text-primary font-semibold'
                     )}
                   >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       {isPersonal ? (
-                        <User className="h-5 w-5 shrink-0 text-text-tertiary" />
+                        <User className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
                       ) : (
-                        <Users className="h-5 w-5 shrink-0 text-text-tertiary" />
+                        <Users className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
                       )}
 
                       {renamingId === ws.id ? (
@@ -676,7 +722,7 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
                           />
                         </form>
                       ) : (
-                        <span className="truncate text-xl font-medium text-text-primary">{ws.name}</span>
+                        <span className="truncate text-sm font-medium text-text-primary">{ws.name}</span>
                       )}
                     </div>
 
@@ -723,7 +769,7 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
 
                   {/* Accordion Dropdown Content */}
                   {isOpen && (
-                    <div className="pl-4 pr-2 py-1 space-y-1 border-l border-border/60 ml-4 mt-0.5 mb-1 animate-in slide-in-from-top-1 duration-150 max-h-[280px] overflow-y-auto">
+                    <div className="pl-3 pr-1 py-0.5 space-y-0 border-l border-border/60 ml-4 mt-0.5 mb-1 animate-in slide-in-from-top-1 duration-150 max-h-[280px] overflow-y-auto">
                       {hasForms ? (
                         <>
                           {displayedForms.map((form) => (
@@ -732,11 +778,11 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
                                 <Link
                                   href={`/forms/${form.id}/edit`}
                                   className={cn(
-                                    'flex items-center gap-2 h-12 px-5 text-xl text-text-secondary hover:text-text-primary rounded hover:bg-bg-elevated transition truncate flex-1',
+                                    'flex items-center gap-2 h-7 px-3 text-xs text-text-secondary hover:text-text-primary rounded hover:bg-bg-elevated transition truncate flex-1',
                                     pathname === `/forms/${form.id}/edit` && 'text-text-primary font-medium'
                                   )}
                                 >
-                                  <FileText className="h-4 w-4 shrink-0 text-text-tertiary" />
+                                  <FileText className="h-3 w-3 shrink-0 text-text-tertiary" />
                                   <span className="truncate">{form.title || 'Formulaire sans titre'}</span>
                                 </Link>
 
@@ -781,9 +827,9 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
                       {/* Bouton + Nouveau formulaire */}
                       <button
                         onClick={() => handleCreateFormInWorkspace(ws.id)}
-                        className="flex items-center gap-2 h-12 px-5 text-xl text-mooove-cyan hover:bg-papyrus-border/20 rounded-md transition w-full text-left font-medium"
+                        className="flex items-center gap-2 h-7 px-3 text-xs text-mooove-cyan hover:bg-papyrus-border/20 rounded-md transition w-full text-left font-medium"
                       >
-                        <Plus className="h-5 w-5 shrink-0" />
+                        <Plus className="h-3 w-3 shrink-0" />
                         Nouveau formulaire
                       </button>
                     </div>
@@ -814,9 +860,9 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
           ) : (
             <button
               onClick={() => setIsCreating(true)}
-              className="flex items-center gap-2 px-4 py-4 w-full text-left text-xl text-text-tertiary hover:text-text-primary transition font-medium"
+              className="flex items-center gap-2 px-3 py-2 w-full text-left text-sm text-text-tertiary hover:text-text-primary transition font-medium"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-3.5 w-3.5" />
               Nouveau workspace
             </button>
           )}
@@ -824,7 +870,7 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
       </div>
 
       {/* Static Sub-Navigation */}
-      <div className="px-3 py-2 border-t border-border">
+      <div className="px-2 py-1 border-t border-border">
         {STATIC_NAV.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href || pathname.startsWith(href + '/');
           return (
@@ -832,14 +878,14 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
               key={href}
               href={href}
               className={cn(
-                'mb-0.5 flex items-center justify-between rounded-md px-4 h-14 text-xl font-medium transition',
+                'mb-0.5 flex items-center justify-between rounded-md px-3 h-8 text-sm font-medium transition',
                 active
                   ? 'bg-bg-elevated text-text-primary'
                   : 'text-text-secondary hover:bg-bg-elevated hover:text-text-primary'
               )}
             >
               <div className="flex items-center gap-2">
-                <Icon className="h-5 w-5 text-text-tertiary" />
+                <Icon className="h-3.5 w-3.5 text-text-tertiary" />
                 <span>{label}</span>
               </div>
               {badge && (
@@ -853,16 +899,16 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
       </div>
 
       {/* Circle User Profile bottom */}
-      <div className="border-t border-border px-3 py-4 bg-bg-elevated/20">
+      <div className="border-t border-border px-3 py-2 bg-bg-elevated/20">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
             {/* Initial circle */}
-            <div className="flex h-12 w-12 min-w-[48px] items-center justify-center rounded-full bg-mooove-navy text-mooove-ice font-bold font-display text-xl">
+            <div className="flex h-7 w-7 min-w-[28px] items-center justify-center rounded-full bg-mooove-navy text-mooove-ice font-bold font-display text-xs">
               {(isLocal ? 'LO' : (userEmail || currentUser?.email || 'U')).charAt(0).toUpperCase()}
             </div>
             {/* Info text */}
             <div className="flex flex-col leading-tight truncate">
-              <span className="font-display text-xl font-medium text-text-primary truncate">
+              <span className="font-display text-xs font-medium text-text-primary truncate">
                 {isLocal ? 'local@papyrus.dev' : (userEmail || currentUser?.email || 'Utilisateur')}
               </span>
             </div>
@@ -939,23 +985,68 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
           title={`Gérer les membres — ${managingWorkspace.name}`}
         >
           <div className="space-y-6">
+            {/* Lien de partage direct */}
+            <div className="space-y-3">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.8px] text-text-tertiary">
+                Lien de partage
+              </span>
+              <div className="flex items-center gap-2 p-3 bg-bg-elevated rounded-md border border-border">
+                <input
+                  type="text"
+                  readOnly
+                  value={`${typeof window !== 'undefined' ? window.location.origin : ''}/workspaces/${managingWorkspace?.id}`}
+                  className="flex-1 text-sm text-text-secondary bg-transparent border-none outline-none cursor-text select-all"
+                  onClick={(e) => e.currentTarget.select()}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (managingWorkspace) {
+                      const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/workspaces/${managingWorkspace.id}`;
+                      navigator.clipboard.writeText(url);
+                      toast.success('Lien copié !');
+                    }
+                  }}
+                >
+                  Copier
+                </Button>
+              </div>
+            </div>
+
             {/* Formulaire d'invitation */}
             <form onSubmit={handleAddMember} className="space-y-3">
               <span className="block text-[11px] font-semibold uppercase tracking-[0.8px] text-text-tertiary">
-                Inviter un membre
+                Inviter un membre par email
               </span>
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  required
-                  placeholder="collaborateur@mooove.live"
-                  value={newMemberEmail}
-                  onChange={(e) => setNewMemberEmail(e.target.value)}
-                  className="flex-1 h-10 px-3 border border-border bg-bg-surface text-sm rounded-md focus:border-accent focus:outline-none"
-                />
-                <Button type="submit" variant="cta" loading={memberLoading} size="sm">
-                  Inviter
-                </Button>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    required
+                    placeholder="collaborateur@mooove.live"
+                    value={newMemberEmail}
+                    onChange={(e) => setNewMemberEmail(e.target.value)}
+                    className="flex-1 h-10 px-3 border border-border bg-bg-surface text-sm rounded-md focus:border-accent focus:outline-none"
+                  />
+                  <Button type="submit" variant="cta" loading={memberLoading} size="sm">
+                    Inviter
+                  </Button>
+                </div>
+
+                {/* Option d'envoi d'email */}
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sendEmailInvite}
+                    onChange={(e) => setSendEmailInvite(e.target.checked)}
+                    className="w-4 h-4 text-accent border-border rounded focus:ring-accent focus:ring-2"
+                  />
+                  <span className="text-text-secondary">
+                    Envoyer un email d'invitation avec le lien de l'espace de travail
+                  </span>
+                </label>
               </div>
             </form>
 
@@ -985,7 +1076,7 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
                       {member.user_id !== currentUser?.id && member.user_id !== 'local-user' && (
                         <button
                           type="button"
-                          onClick={() => handleRemoveMember(member.user_id)}
+                          onClick={() => handleRemoveMember(member.user_id, member.email)}
                           className="text-xs text-danger hover:underline font-semibold"
                         >
                           Retirer
@@ -995,6 +1086,14 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
                   ))
                 )}
               </div>
+            </div>
+
+            {/* Note sur la collaboration */}
+            <div className="p-3 bg-accent/5 border border-accent/20 rounded-lg">
+              <p className="text-xs text-text-secondary">
+                <strong>Note :</strong> La collaboration en temps réel n'est pas encore implémentée.
+                Si plusieurs personnes modifient le même formulaire simultanément, la dernière sauvegarde écrasera les modifications précédentes.
+              </p>
             </div>
 
             <div className="flex justify-end pt-2 border-t border-border/60">
@@ -1009,6 +1108,19 @@ export function Sidebar({ teamName, userEmail, activeTeam, allTeams }: Props) {
           </div>
         </Modal>
       )}
+
+      {/* Modal de Confirmation de Suppression de Membre */}
+      <ConfirmationModal
+        isOpen={!!memberToRemove}
+        onClose={() => setMemberToRemove(null)}
+        onConfirm={confirmRemoveMember}
+        title="Retirer ce membre ?"
+        message={`Êtes-vous sûr de vouloir retirer ${memberToRemove?.email} de cet espace de travail ? Cette action est irréversible.`}
+        confirmText="Retirer"
+        cancelText="Annuler"
+        loading={removeLoading}
+        variant="danger"
+      />
     </aside>
   );
 }

@@ -4,6 +4,9 @@ import type { Field, Form } from '@/types';
 import { FieldRenderer } from '@/components/builder/FieldRenderer';
 import { getFieldIcon, isIconVisible } from '@/lib/field-icons';
 import { cn } from '@/lib/utils';
+import { createContext } from 'react';
+
+export const FieldContext = createContext<Field | null>(null);
 
 interface Props {
   field: Field;
@@ -64,8 +67,12 @@ export function PublicFieldCard({
     );
   }
 
-  // Image/vidéo = contenu média
-  if (field.type === 'image' || field.type === 'video') {
+  const isRespondentUpload =
+    ['file', 'image', 'video'].includes(field.type) &&
+    field.validation?.respondent_mode_enabled === true;
+
+  // En mode Créateur uniquement : on rend le contenu média brut sans carte ni titre
+  if (['file', 'image', 'video'].includes(field.type) && !isRespondentUpload) {
     return (
       <div className={span}>
         <FieldRenderer field={field} preview={true} mobile={false} />
@@ -92,7 +99,7 @@ export function PublicFieldCard({
     );
   }
 
-  // Champ de saisie standard
+  // Mode Répondant ou Champ de saisie standard
   return (
     <div
       className={cn(
@@ -104,13 +111,15 @@ export function PublicFieldCard({
     >
       <PublicFieldQuestion field={field} theme={form.theme} />
       <div className="mt-4">
-        <FieldRenderer
-          field={field}
-          preview={false}
-          mobile={false}
-          value={responses[field.id]}
-          onValueChange={(val) => updateResponse(field.id, val)}
-        />
+        <FieldContext.Provider value={field}>
+          <FieldRenderer
+            field={field}
+            preview={false}
+            mobile={false}
+            value={responses[field.id]}
+            onValueChange={(val) => updateResponse(field.id, val)}
+          />
+        </FieldContext.Provider>
       </div>
     </div>
   );
@@ -125,6 +134,9 @@ function PublicFieldQuestion({
   theme: Form['theme'];
 }) {
   const style = { ...theme.field_style, ...field.style };
+  const isRespondentUpload =
+    ['file', 'image', 'video'].includes(field.type) &&
+    field.validation?.respondent_mode_enabled === true;
 
   return (
     <div className="space-y-1">
@@ -173,7 +185,10 @@ function PublicFieldQuestion({
 
       {/* Description du champ */}
       {field.description.fr && (
-        <p className="text-sm text-text-secondary leading-relaxed">
+        <p className={cn(
+          'text-sm text-text-secondary leading-relaxed',
+          isRespondentUpload ? 'italic text-text-tertiary font-normal' : ''
+        )}>
           {field.description.fr}
         </p>
       )}

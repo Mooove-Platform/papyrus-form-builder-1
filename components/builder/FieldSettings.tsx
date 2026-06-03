@@ -643,8 +643,8 @@ function MediaSettings({ field, patchValidation, fileInputRef, handleImageUpload
 
   return (
     <div className="space-y-5">
-      {/* Section Contenu pour Image et Video */}
-      {(field.type === 'image' || field.type === 'video') && (
+      {/* Section Contenu pour Image, Video et Fichier */}
+      {(field.type === 'image' || field.type === 'video' || field.type === 'file') && (
         <Section title="Contenu">
           <Switch
             checked={field.validation?.show_title ?? false}

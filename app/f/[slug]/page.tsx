@@ -9,8 +9,8 @@ interface PageProps {
   };
 }
 
-/** Récupère un formulaire publié par son slug depuis Supabase (lecture publique) */
-async function getPublishedForm(slug: string): Promise<Form | null> {
+/** Récupère un formulaire par son slug depuis Supabase (lecture publique) */
+async function getFormBySlug(slug: string): Promise<Form | null> {
   const supabase = createClient();
 
   const { data: form, error } = await supabase
@@ -21,7 +21,6 @@ async function getPublishedForm(slug: string): Promise<Form | null> {
       logic_rules(*)
     `)
     .eq('slug', slug)
-    .eq('status', 'published')
     .single();
 
   if (error) {
@@ -38,21 +37,36 @@ async function getPublishedForm(slug: string): Promise<Form | null> {
 }
 
 export default async function FormPublicPage({ params }: PageProps) {
-  const form = await getPublishedForm(params.slug);
+  const form = await getFormBySlug(params.slug);
 
   if (!form) {
     notFound();
+  }
+
+  if (form.status !== 'published') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-bg-base p-6 text-center">
+        <div className="max-w-md space-y-4 rounded-lg border border-border bg-bg-surface p-8 shadow-sm">
+          <h1 className="font-display text-2xl font-semibold text-text-primary">
+            Ce formulaire n&apos;est plus disponible
+          </h1>
+          <p className="text-sm text-text-secondary">
+            Le propriétaire de ce formulaire l&apos;a repassé en brouillon ou l&apos;a archivé.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return <FormPublicView form={form} />;
 }
 
 export async function generateMetadata({ params }: PageProps) {
-  const form = await getPublishedForm(params.slug);
+  const form = await getFormBySlug(params.slug);
 
-  if (!form) {
+  if (!form || form.status !== 'published') {
     return {
-      title: 'Formulaire introuvable',
+      title: 'Formulaire indisponible',
     };
   }
 

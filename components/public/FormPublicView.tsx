@@ -74,14 +74,13 @@ export function FormPublicView({ form }: Props) {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const result = await response.json();
-      setSubmissionId(result.submission_id);
-      setIsSubmitted(true);
-
       // Nettoyer le localStorage du save & resume si activé
       if (form.save_and_resume) {
         localStorage.removeItem(`papyrus-progress-${form.id}`);
       }
+
+      // Rediriger vers la page merci
+      router.push(`/f/${form.slug}/merci`);
 
     } catch (error) {
       console.error('Erreur lors de la soumission:', error);

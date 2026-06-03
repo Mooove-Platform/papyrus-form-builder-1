@@ -104,11 +104,21 @@ function FieldCard({
   const isSectionBreak = field.type === 'section_break';
   const isImage = field.type === 'image';
   const isVideo = field.type === 'video';
+  const isFile = field.type === 'file';
   const isStatement = field.type === 'statement';
 
-  // Image et video avec titre activé sont traités comme des questions avec numéro
-  const showTitleForMedia = (isImage || isVideo) && field.validation?.show_title;
-  const isLayout = isSectionBreak || (isImage && !showTitleForMedia) || (isVideo && !showTitleForMedia);
+  const isRespondentUpload =
+    ['file', 'image', 'video'].includes(field.type) &&
+    field.validation?.respondent_mode_enabled === true;
+
+  // Image, video et file avec titre activé sont traités comme des questions avec numéro
+  const showTitleForMedia = (isImage || isVideo || isFile) && field.validation?.show_title;
+  const isLayout =
+    isSectionBreak ||
+    (!isRespondentUpload &&
+      ((isImage && !showTitleForMedia) ||
+        (isVideo && !showTitleForMedia) ||
+        (isFile && !showTitleForMedia)));
   const collectsAnswer = !isLayout && !isStatement;
   const isChoiceLike =
     field.type === 'single_choice' || field.type === 'multiple_choice' || field.type === 'dropdown';

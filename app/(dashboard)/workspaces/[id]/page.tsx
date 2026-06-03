@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { toast } from '@/components/ui/Toast';
 import { formatCount } from '@/lib/utils';
 import { createForm, listTeamMembers, addTeamMember, deleteTeamMember } from '@/lib/store';
@@ -42,8 +43,13 @@ export default function WorkspacePage() {
   const [workspaceMembers, setWorkspaceMembers] = useState<any[]>([]);
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [memberLoading, setMemberLoading] = useState(false);
+  const [sendEmailInvite, setSendEmailInvite] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // États pour la modal de confirmation de suppression
+  const [memberToRemove, setMemberToRemove] = useState<{ id: string; email: string } | null>(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
 
   const isLocal = process.env.NEXT_PUBLIC_LOCAL_MODE === 'true';
 
@@ -81,6 +87,7 @@ export default function WorkspacePage() {
     setMemberLoading(true);
 
     try {
+      // Ajouter le membre
       if (isLocal) {
         const { addMember } = await import('@/lib/store/local-workspaces');
         addMember({
@@ -93,9 +100,41 @@ export default function WorkspacePage() {
       } else {
         await addTeamMember(workspace.id, newMemberEmail.trim(), 'member');
       }
+
+      // Envoyer l'email d'invitation si demandé
+      if (sendEmailInvite) {
+        try {
+          const response = await fetch(`/api/workspaces/${workspace.id}/invite`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              email: newMemberEmail.trim(),
+              workspaceName: workspace.name,
+              inviterName: currentUser?.email || 'Un collaborateur'
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erreur lors de l\'envoi de l\'email');
+          }
+        } catch (emailError) {
+          console.warn('Email invitation failed:', emailError);
+          // N'interrompt pas le processus si l'email échoue
+          toast.error('Membre ajouté, mais l\'email d\'invitation n\'a pas pu être envoyé');
+        }
+      }
+
       setNewMemberEmail('');
+      setSendEmailInvite(false);
       await loadMembers(workspace.id);
-      toast.success('Membre invité avec succès !');
+
+      const message = sendEmailInvite
+        ? 'Membre invité et email envoyé avec succès !'
+        : 'Membre invité avec succès !';
+      toast.success(message);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Erreur lors de l'invitation");
@@ -104,22 +143,29 @@ export default function WorkspacePage() {
     }
   };
 
-  const handleRemoveMember = async (userId: string) => {
-    if (!workspace) return;
-    if (confirm('Retirer ce membre de cet espace de travail ?')) {
-      try {
-        if (isLocal) {
-          const { removeMember } = await import('@/lib/store/local-workspaces');
-          removeMember(workspace.id, userId);
-        } else {
-          await deleteTeamMember(workspace.id, userId);
-        }
-        await loadMembers(workspace.id);
-        toast.success('Membre retiré.');
-      } catch (err) {
-        console.error(err);
-        toast.error('Erreur lors du retrait du membre');
+  const handleRemoveMember = (userId: string, userEmail: string) => {
+    setMemberToRemove({ id: userId, email: userEmail });
+  };
+
+  const confirmRemoveMember = async () => {
+    if (!workspace || !memberToRemove) return;
+    setRemoveLoading(true);
+
+    try {
+      if (isLocal) {
+        const { removeMember } = await import('@/lib/store/local-workspaces');
+        removeMember(workspace.id, memberToRemove.id);
+      } else {
+        await deleteTeamMember(workspace.id, memberToRemove.id);
       }
+      await loadMembers(workspace.id);
+      toast.success('Membre retiré.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erreur lors du retrait du membre');
+    } finally {
+      setRemoveLoading(false);
+      setMemberToRemove(null);
     }
   };
 
@@ -416,23 +462,66 @@ export default function WorkspacePage() {
           title={`Gérer les membres — ${workspace.name}`}
         >
           <div className="space-y-6">
+            {/* Lien de partage direct */}
+            <div className="space-y-3">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.8px] text-text-tertiary">
+                Lien de partage
+              </span>
+              <div className="flex items-center gap-2 p-3 bg-bg-elevated rounded-md border border-border">
+                <input
+                  type="text"
+                  readOnly
+                  value={`${window?.location?.origin || ''}/workspaces/${workspace.id}`}
+                  className="flex-1 text-sm text-text-secondary bg-transparent border-none outline-none cursor-text select-all"
+                  onClick={(e) => e.currentTarget.select()}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const url = `${window?.location?.origin || ''}/workspaces/${workspace.id}`;
+                    navigator.clipboard.writeText(url);
+                    toast.success('Lien copié !');
+                  }}
+                >
+                  Copier
+                </Button>
+              </div>
+            </div>
+
             {/* Formulaire d'invitation */}
             <form onSubmit={handleAddMember} className="space-y-3">
               <span className="block text-[11px] font-semibold uppercase tracking-[0.8px] text-text-tertiary">
-                Inviter un membre
+                Inviter un membre par email
               </span>
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  required
-                  placeholder="collaborateur@mooove.live"
-                  value={newMemberEmail}
-                  onChange={(e) => setNewMemberEmail(e.target.value)}
-                  className="flex-1 h-10 px-3 border border-border bg-bg-surface text-sm rounded-md focus:border-accent focus:outline-none"
-                />
-                <Button type="submit" variant="cta" loading={memberLoading} size="sm">
-                  Inviter
-                </Button>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    required
+                    placeholder="collaborateur@mooove.live"
+                    value={newMemberEmail}
+                    onChange={(e) => setNewMemberEmail(e.target.value)}
+                    className="flex-1 h-10 px-3 border border-border bg-bg-surface text-sm rounded-md focus:border-accent focus:outline-none"
+                  />
+                  <Button type="submit" variant="cta" loading={memberLoading} size="sm">
+                    Inviter
+                  </Button>
+                </div>
+
+                {/* Option d'envoi d'email */}
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sendEmailInvite}
+                    onChange={(e) => setSendEmailInvite(e.target.checked)}
+                    className="w-4 h-4 text-accent border-border rounded focus:ring-accent focus:ring-2"
+                  />
+                  <span className="text-text-secondary">
+                    Envoyer un email d'invitation avec le lien de l'espace de travail
+                  </span>
+                </label>
               </div>
             </form>
 
@@ -462,7 +551,7 @@ export default function WorkspacePage() {
                       {member.user_id !== currentUser?.id && member.user_id !== 'local-user' && (
                         <button
                           type="button"
-                          onClick={() => handleRemoveMember(member.user_id)}
+                          onClick={() => handleRemoveMember(member.user_id, member.email)}
                           className="text-xs text-danger hover:underline font-semibold"
                         >
                           Retirer
@@ -472,6 +561,14 @@ export default function WorkspacePage() {
                   ))
                 )}
               </div>
+            </div>
+
+            {/* Note sur la collaboration */}
+            <div className="p-3 bg-accent/5 border border-accent/20 rounded-lg">
+              <p className="text-xs text-text-secondary">
+                <strong>Note :</strong> La collaboration en temps réel n'est pas encore implémentée.
+                Si plusieurs personnes modifient le même formulaire simultanément, la dernière sauvegarde écrasera les modifications précédentes.
+              </p>
             </div>
 
             <div className="flex justify-end pt-2 border-t border-border/60">
@@ -486,6 +583,19 @@ export default function WorkspacePage() {
           </div>
         </Modal>
       )}
+
+      {/* Modal de Confirmation de Suppression */}
+      <ConfirmationModal
+        isOpen={!!memberToRemove}
+        onClose={() => setMemberToRemove(null)}
+        onConfirm={confirmRemoveMember}
+        title="Retirer ce membre ?"
+        message={`Êtes-vous sûr de vouloir retirer ${memberToRemove?.email} de cet espace de travail ? Cette action est irréversible.`}
+        confirmText="Retirer"
+        cancelText="Annuler"
+        loading={removeLoading}
+        variant="danger"
+      />
     </div>
   );
 }

@@ -66,7 +66,7 @@ export async function POST(
           error: 'Champs obligatoires manquants',
           missingFields: missingFields.map((f: Field) => f.label.fr || f.id)
         },
-        { status: 400 }
+        { status: 422 }
       );
     }
 
