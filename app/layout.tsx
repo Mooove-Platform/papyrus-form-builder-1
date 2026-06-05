@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { DM_Sans } from 'next/font/google';
 import './globals.css';
 import { ToastContainer } from '@/components/ui/Toast';
@@ -12,6 +12,11 @@ const aktivSub = DM_Sans({
   variable: '--font-aktiv',
   display: 'swap'
 });
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
 
 export const metadata: Metadata = {
   title: 'Papyrus — Form Builder',
