@@ -715,7 +715,7 @@ export default function BuilderPage() {
           }}
         >
           {/* Palette */}
-          <aside style={{ width: 'var(--palette-width)' }} className="hidden lg:block shrink-0 overflow-y-auto border-r border-border bg-bg-surface p-5">
+          <aside style={{ width: 'var(--palette-width)' }} className="hidden lg:block shrink-0 overflow-y-auto border-r border-border bg-bg-surface px-3.5 py-4">
             <FieldPalette onAdd={handleAdd} disabled={fields.length >= LIMITS.FORM_FIELDS_MAX} />
           </aside>
 
@@ -773,7 +773,7 @@ export default function BuilderPage() {
           </div>
 
           {/* Settings */}
-          <aside style={{ width: 'var(--settings-width)' }} className="hidden lg:block shrink-0 overflow-y-auto border-l border-border bg-bg-surface p-5">
+          <aside style={{ width: 'var(--settings-width)' }} className="hidden lg:block shrink-0 overflow-y-auto border-l border-border bg-bg-surface px-3.5 py-4">
             {selected ? (
               <FieldSettings
                 form={form}

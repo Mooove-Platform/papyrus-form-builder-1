@@ -838,7 +838,7 @@ export function Sidebar({
       </div>
 
       {/* Workspace Section */}
-      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2">
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
         <div>
           <span className={cn("block px-3 text-[11px] font-semibold uppercase tracking-[0.8px] text-text-tertiary mb-1 truncate transition-all duration-200", isCollapsed && "hidden")}>
             Espaces de travail
@@ -953,7 +953,7 @@ export function Sidebar({
 
                   {/* Accordion Dropdown Content */}
                   {isOpen && !isCollapsed && (
-                    <div className="pl-3 pr-1 py-0.5 space-y-0 border-l border-border/60 ml-4 mt-0.5 mb-1 animate-in slide-in-from-top-1 duration-150 max-h-[280px] overflow-y-auto">
+                    <div className="pl-2 pr-1 py-0 space-y-0 border-l border-border/60 ml-4 mt-0 mb-0.5 animate-in slide-in-from-top-1 duration-150 max-h-[280px] overflow-y-auto">
                       {hasForms ? (
                         <>
                           {displayedForms.map((form) => (
@@ -1043,7 +1043,7 @@ export function Sidebar({
                       <button
                         onClick={() => handleCreateFormInWorkspace(ws.id)}
                         style={{ height: 'var(--sidebar-item-height)', fontSize: 'var(--sidebar-text-sm)' }}
-                        className="flex items-center gap-2 px-3 text-mooove-cyan hover:bg-papyrus-border/20 rounded-md transition w-full text-left font-medium"
+                        className="flex items-center gap-2 px-3 text-mooove-cyan hover:bg-papyrus-border/20 rounded-md transition w-full text-left font-medium mt-0.5"
                       >
                         <Plus
                           style={{ width: 'var(--sidebar-icon)', height: 'var(--sidebar-icon)' }}

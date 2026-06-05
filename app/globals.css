@@ -60,7 +60,7 @@
   /* Panels de l'éditeur & Spacings fluides */
   --palette-width: clamp(240px, 18vw, 280px);
   --settings-width: clamp(280px, 20vw, 340px);
-  --layout-padding: clamp(16px, 3.5vw, 32px);
+  --layout-padding: clamp(12px, 3vw, 24px);
 }
 
 [data-theme='dark'] {

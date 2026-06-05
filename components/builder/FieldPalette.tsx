@@ -21,18 +21,18 @@ export function FieldPalette({ onAdd, disabled = false }: Props) {
   };
 
   return (
-    <div className={disabled ? 'space-y-5 opacity-60' : 'space-y-5'}>
+    <div className={disabled ? 'space-y-3 opacity-60' : 'space-y-3'}>
       <div>
         <h2 className="papyrus-meta text-xs uppercase tracking-wide not-italic">i. Ajouter un champ</h2>
-        <p className="mt-1 text-xs text-text-tertiary">Cliquez pour ajouter au formulaire</p>
+        <p className="mt-0.5 text-xs text-text-tertiary">Cliquez pour ajouter au formulaire</p>
       </div>
 
       {FIELD_CATEGORIES.map((cat) => (
         <div key={cat.title}>
-          <div className="px-1 pb-2 text-xs font-medium uppercase tracking-wider text-text-tertiary">
+          <div className="px-1 pb-1 text-xs font-medium uppercase tracking-wider text-text-tertiary">
             {cat.title}
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {cat.types.map((type) => {
               const meta = FIELD_META[type];
               const Icon = meta.icon;
@@ -40,7 +40,7 @@ export function FieldPalette({ onAdd, disabled = false }: Props) {
                 <button
                   key={type}
                   onClick={() => handleClick(type)}
-                  className={`group flex w-full items-center gap-3 rounded-md border border-transparent px-2.5 py-2 text-left transition ${
+                  className={`group flex w-full items-center gap-2.5 rounded-md border border-transparent px-2 py-1.5 text-left transition ${
                     disabled
                       ? 'cursor-not-allowed hover:bg-transparent'
                       : 'hover:border-border hover:bg-bg-elevated'
