@@ -23,7 +23,7 @@ function LoginForm() {
   if (IS_LOCAL_MODE) {
     return (
       <div className="mx-auto w-full max-w-sm text-center">
-        <p className="papyrus-meta text-sm">i. Mode local — redirection en cours…</p>
+        <p className="papyrus-meta text-sm">Mode local — redirection en cours…</p>
       </div>
     );
   }
@@ -40,6 +40,16 @@ function LoginForm() {
       setLoading(false);
       return;
     }
+
+    // Vérifier s'il y a une URL d'invitation en attente
+    const inviteRedirect = sessionStorage.getItem('redirect_after_login');
+    if (inviteRedirect) {
+      sessionStorage.removeItem('redirect_after_login');
+      router.push(inviteRedirect);
+      router.refresh();
+      return;
+    }
+
     const redirect = searchParams.get('redirect') || '/dashboard';
     router.push(redirect);
     router.refresh();
@@ -48,8 +58,7 @@ function LoginForm() {
   return (
     <div className="mx-auto w-full max-w-sm">
       <div className="mb-8 text-center">
-        <h1 className="font-display text-3xl">Bon retour.</h1>
-        <p className="papyrus-meta mt-2 text-sm not-italic">i. Connectez-vous à votre espace Papyrus</p>
+        <h1 className="font-display text-3xl">Connexion à Papyrus</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -96,7 +105,7 @@ export default function LoginPage() {
   return (
     <Suspense fallback={
       <div className="mx-auto w-full max-w-sm text-center">
-        <p className="papyrus-meta text-sm">i. Chargement…</p>
+        <p className="papyrus-meta text-sm">Chargement…</p>
       </div>
     }>
       <LoginForm />

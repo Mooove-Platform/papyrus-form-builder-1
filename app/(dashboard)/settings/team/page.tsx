@@ -1,0 +1,459 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Users, Mail, Link as LinkIcon, Crown, User, Trash2, Copy, Check, X, Send } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
+import { toast } from '@/components/ui/Toast';
+import { cn } from '@/lib/utils';
+import type { TeamMemberWithProfile, TeamInvitation, TeamRole } from '@/types';
+import {
+  getTeamMembers,
+  getTeamInvitations,
+  createEmailInvitation,
+  createLinkInvitation,
+  deleteInvitation,
+  removeMember,
+  changeMemberRole,
+  isTeamAdmin
+} from '@/lib/store/team-invitations';
+
+export default function TeamSettingsPage() {
+  const [members, setMembers] = useState<TeamMemberWithProfile[]>([]);
+  const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
+
+  // États pour les modales
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [emailToInvite, setEmailToInvite] = useState('');
+  const [roleToInvite, setRoleToInvite] = useState<TeamRole>('member');
+  const [generatedLink, setGeneratedLink] = useState<string>('');
+  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
+
+  // Charger les données
+  useEffect(() => {
+    getCurrentTeamAndLoadData();
+  }, []);
+
+  const getCurrentTeamAndLoadData = async () => {
+    try {
+      setLoading(true);
+
+      // Récupérer l'ID de la team active depuis le cookie
+      const getActiveTeamId = (): string | null => {
+        if (typeof document === 'undefined') return null;
+        const match = document.cookie.match(/(^|;)\s*papyrus:active-team-id\s*=\s*([^;]+)/);
+        return match ? match[2] : null;
+      };
+
+      let teamId = getActiveTeamId();
+
+      // Si pas de team active dans le cookie, récupérer la team principale de l'utilisateur
+      if (!teamId) {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (user) {
+          const { data: membership } = await supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', user.id)
+            .eq('role', 'admin')
+            .limit(1)
+            .single();
+
+          teamId = membership?.team_id || user.id;
+        }
+      }
+
+      if (!teamId) {
+        throw new Error('Aucune équipe trouvée');
+      }
+
+      setCurrentTeamId(teamId);
+      await loadData(teamId);
+    } catch (error) {
+      console.error('Error loading team data:', error);
+      toast.error('Impossible de charger les données de l\'équipe');
+      setLoading(false);
+    }
+  };
+
+  const loadData = async (teamId: string) => {
+    try {
+      const [membersData, invitationsData, adminStatus] = await Promise.all([
+        getTeamMembers(teamId),
+        getTeamInvitations(teamId),
+        isTeamAdmin(teamId)
+      ]);
+
+      setMembers(membersData);
+      setInvitations(invitationsData);
+      setIsAdmin(adminStatus);
+    } catch (error) {
+      console.error('Error loading team data:', error);
+      toast.error('Impossible de charger les données de l\'équipe');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailInvitation = async () => {
+    if (!emailToInvite.trim()) return;
+
+    try {
+      await createEmailInvitation(currentTeamId!, emailToInvite, roleToInvite);
+      await loadData(currentTeamId!);
+      setShowEmailModal(false);
+      setEmailToInvite('');
+      toast.success(`Une invitation a été envoyée à ${emailToInvite}`);
+    } catch (error: any) {
+      toast.error(error.message || 'Impossible d\'envoyer l\'invitation');
+    }
+  };
+
+  const handleCreateLinkInvitation = async () => {
+    try {
+      const invitation = await createLinkInvitation(currentTeamId!, roleToInvite);
+      const link = `${window.location.origin}/invite/${invitation.invite_token}`;
+      setGeneratedLink(link);
+      await loadData(currentTeamId!);
+      toast.success('Le lien d\'invitation a été généré');
+    } catch (error: any) {
+      toast.error(error.message || 'Impossible de créer le lien');
+    }
+  };
+
+  const handleCopyLink = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedStates({ ...copiedStates, [id]: true });
+      setTimeout(() => {
+        setCopiedStates({ ...copiedStates, [id]: false });
+      }, 2000);
+      toast.success('Le lien a été copié dans le presse-papier');
+    } catch (error) {
+      toast.error('Impossible de copier le lien');
+    }
+  };
+
+  const handleDeleteInvitation = async (invitationId: string) => {
+    try {
+      await deleteInvitation(invitationId);
+      await loadData(currentTeamId!);
+      toast.success('L\'invitation a été annulée');
+    } catch (error: any) {
+      toast.error(error.message || 'Impossible de supprimer l\'invitation');
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    try {
+      await removeMember(currentTeamId!, userId);
+      await loadData(currentTeamId!);
+      toast.success('Le membre a été retiré de l\'équipe');
+    } catch (error: any) {
+      toast.error(error.message || 'Impossible de retirer le membre');
+    }
+  };
+
+  const handleChangeRole = async (userId: string, newRole: TeamRole) => {
+    try {
+      await changeMemberRole(currentTeamId!, userId, newRole);
+      await loadData(currentTeamId!);
+      toast.success('Le rôle du membre a été mis à jour');
+    } catch (error: any) {
+      toast.error(error.message || 'Impossible de modifier le rôle');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="h-8 bg-gray-200 rounded w-48"></div>
+        <div className="h-32 bg-gray-200 rounded"></div>
+        <div className="h-64 bg-gray-200 rounded"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Users className="w-6 h-6 text-var(--mooove-navy)" />
+            <h2 className="text-xl font-display font-medium text-var(--mooove-navy)">
+              Gestion de l'équipe
+            </h2>
+          </div>
+
+          {isAdmin && (
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowEmailModal(true)}
+                className="flex items-center gap-2"
+              >
+                <Mail className="w-4 h-4" />
+                Par email
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowLinkModal(true)}
+                className="flex items-center gap-2"
+              >
+                <LinkIcon className="w-4 h-4" />
+                Par lien
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <p className="text-gray-600">
+          {members.length} membre{members.length > 1 ? 's' : ''} • {invitations.filter(inv => inv.status === 'pending').length} invitation{invitations.filter(inv => inv.status === 'pending').length > 1 ? 's' : ''} en attente
+        </p>
+      </div>
+
+      {/* Membres actuels */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium text-var(--mooove-navy)">Membres</h3>
+
+        <div className="space-y-3">
+          {members.map((member) => (
+            <div key={member.user_id} className="flex items-center justify-between p-4 border border-var(--papyrus-border) rounded-xl bg-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-var(--mooove-navy) rounded-full flex items-center justify-center text-white font-medium">
+                  {member.name ? member.name[0].toUpperCase() : member.email[0].toUpperCase()}
+                </div>
+                <div>
+                  <div className="font-medium text-gray-900">
+                    {member.name || 'Sans nom'}
+                  </div>
+                  <div className="text-sm text-gray-600">{member.email || 'Email non disponible'}</div>
+                </div>
+                <Badge variant={member.role === 'admin' ? 'published' : 'neutral'}>
+                  {member.role === 'admin' ? (
+                    <><Crown className="w-3 h-3 mr-1" /> Admin</>
+                  ) : (
+                    <><User className="w-3 h-3 mr-1" /> Membre</>
+                  )}
+                </Badge>
+              </div>
+
+              {isAdmin && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={member.role}
+                    onChange={(e) => handleChangeRole(member.user_id, e.target.value as TeamRole)}
+                    className="px-3 py-1 text-sm border rounded-lg"
+                  >
+                    <option value="member">Membre</option>
+                    <option value="admin">Admin</option>
+                  </select>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveMember(member.user_id)}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Invitations en attente */}
+      {invitations.filter(inv => inv.status === 'pending').length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-var(--mooove-navy)">Invitations en attente</h3>
+
+          <div className="space-y-3">
+            {invitations.filter(inv => inv.status === 'pending').map((invitation) => (
+              <div key={invitation.id} className="flex items-center justify-between p-4 border border-var(--papyrus-border) rounded-xl bg-yellow-50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center text-white">
+                    {invitation.invitation_type === 'email' ? (
+                      <Mail className="w-5 h-5" />
+                    ) : (
+                      <LinkIcon className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-900">
+                      {invitation.invitation_type === 'email' ? invitation.email : 'Lien d\'invitation'}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {invitation.invitation_type === 'email' ? 'Envoyée par email' : 'Invitation par lien'} •
+                      Expire le {new Date(invitation.expires_at!).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <Badge variant="neutral">
+                    {invitation.role === 'admin' ? 'Admin' : 'Membre'}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {invitation.invitation_type === 'link' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleCopyLink(
+                        `${window.location.origin}/invite/${invitation.invite_token}`,
+                        invitation.id
+                      )}
+                      className="flex items-center gap-2"
+                    >
+                      {copiedStates[invitation.id] ? (
+                        <Check className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </Button>
+                  )}
+
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteInvitation(invitation.id)}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal invitation par email */}
+      <Modal
+        isOpen={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        title="Inviter par email"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600">
+            Invitez un nouveau membre en saisissant son adresse email. Une invitation lui sera envoyée.
+          </p>
+
+          <div className="space-y-3">
+            <Input
+              type="email"
+              placeholder="nom@exemple.com"
+              value={emailToInvite}
+              onChange={(e) => setEmailToInvite(e.target.value)}
+              label="Adresse email"
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Rôle
+              </label>
+              <select
+                value={roleToInvite}
+                onChange={(e) => setRoleToInvite(e.target.value as TeamRole)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="member">Membre</option>
+                <option value="admin">Administrateur</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setShowEmailModal(false)} className="flex-1">
+              Annuler
+            </Button>
+            <Button variant="primary" onClick={handleEmailInvitation} className="flex-1 flex items-center gap-2">
+              <Send className="w-4 h-4" />
+              Envoyer l'invitation
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal invitation par lien */}
+      <Modal
+        isOpen={showLinkModal}
+        onClose={() => setShowLinkModal(false)}
+        title="Créer un lien d'invitation"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600">
+            Créez un lien d'invitation que vous pourrez partager. Toute personne avec ce lien pourra rejoindre votre équipe.
+          </p>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Rôle par défaut
+            </label>
+            <select
+              value={roleToInvite}
+              onChange={(e) => setRoleToInvite(e.target.value as TeamRole)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="member">Membre</option>
+              <option value="admin">Administrateur</option>
+            </select>
+          </div>
+
+          {generatedLink && (
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Lien d'invitation
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={generatedLink}
+                  readOnly
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm"
+                />
+                <Button
+                  variant="secondary"
+                  onClick={() => handleCopyLink(generatedLink, 'generated')}
+                >
+                  {copiedStates['generated'] ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Ce lien expire dans 7 jours.
+              </p>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-4">
+            <Button variant="secondary" onClick={() => {
+              setShowLinkModal(false);
+              setGeneratedLink('');
+            }} className="flex-1">
+              Fermer
+            </Button>
+            {!generatedLink && (
+              <Button variant="primary" onClick={handleCreateLinkInvitation} className="flex-1">
+                Générer le lien
+              </Button>
+            )}
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}

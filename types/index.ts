@@ -286,6 +286,43 @@ export interface TeamMember {
   joined_at: string;
 }
 
+export type InvitationType = 'email' | 'link';
+export type InvitationStatus = 'pending' | 'accepted' | 'expired';
+
+export interface TeamInvitation {
+  id: string;
+  team_id: string;
+  invited_by?: string;
+  invitation_type: InvitationType;
+  email?: string; // pour invitations par email
+  invite_token?: string; // pour invitations par lien
+  role: TeamRole;
+  status: InvitationStatus;
+  expires_at?: string;
+  accepted_at?: string;
+  accepted_by?: string;
+  created_at: string;
+}
+
+export interface TeamMemberWithProfile {
+  user_id: string;
+  team_id: string;
+  role: TeamRole;
+  joined_at: string;
+  name?: string;
+  email?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  avatar_url?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type DestinationType = 'supabase' | 'airtable' | 'google_sheets';
 
 export interface FormDestination {
