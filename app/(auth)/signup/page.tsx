@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { IS_LOCAL_MODE } from '@/lib/mode';
+import { getBaseUrl } from '@/lib/utils';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -37,11 +38,12 @@ export default function SignupPage() {
 
     // Déterminer l'URL de redirection après confirmation
     const inviteRedirect = sessionStorage.getItem('redirect_after_signup');
-    let emailRedirectTo = `${process.env.NEXT_PUBLIC_APP_URL}/confirm`;
+    const baseUrl = getBaseUrl();
+    let emailRedirectTo = `${baseUrl}/confirm`;
 
     if (inviteRedirect) {
       // Inclure l'URL d'invitation dans les paramètres de redirection
-      emailRedirectTo = `${process.env.NEXT_PUBLIC_APP_URL}/confirm?redirect=${encodeURIComponent(inviteRedirect)}`;
+      emailRedirectTo = `${baseUrl}/confirm?redirect=${encodeURIComponent(inviteRedirect)}`;
     }
 
     const { error: signUpError } = await supabase.auth.signUp({

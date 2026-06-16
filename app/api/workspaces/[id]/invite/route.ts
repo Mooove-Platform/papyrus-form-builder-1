@@ -23,7 +23,11 @@ export async function POST(
       );
     }
 
-    const workspaceUrl = `${process.env.NEXT_PUBLIC_APP_URL}/workspaces/${workspaceId}`;
+    let baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+    if (!baseUrl || (baseUrl.includes('localhost') && !request.nextUrl.hostname.includes('localhost'))) {
+      baseUrl = request.nextUrl.origin;
+    }
+    const workspaceUrl = `${baseUrl.replace(/\/$/, '')}/workspaces/${workspaceId}`;
     const inviter = inviterName || 'Un collaborateur';
 
     const resend = new Resend(process.env.RESEND_API_KEY);

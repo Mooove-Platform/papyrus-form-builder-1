@@ -73,3 +73,23 @@ export function formatRelativeTime(dateString: string): string {
   const diffInYears = Math.floor(diffInMonths / 12);
   return `il y a ${diffInYears} an${diffInYears > 1 ? 's' : ''}`;
 }
+
+/**
+ * Récupère l'URL de base de l'application de manière sécurisée et dynamique.
+ * Gère le cas où NEXT_PUBLIC_APP_URL est mal configuré en production (ex: pointant vers localhost).
+ */
+export function getBaseUrl(): string {
+  let url = process.env.NEXT_PUBLIC_APP_URL || '';
+
+  if (typeof window !== 'undefined') {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    // Si la variable d'env n'est pas définie OU si elle pointe vers localhost mais qu'on est en prod,
+    // on utilise l'origine actuelle.
+    if (!url || (url.includes('localhost') && !isLocalhost)) {
+      url = window.location.origin;
+    }
+  }
+
+  // S'assurer qu'il n'y a pas de slash de fin
+  return url.replace(/\/$/, '');
+}

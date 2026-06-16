@@ -32,7 +32,7 @@ import {
   unarchiveForm,
   updateForm
 } from '@/lib/store';
-import { cn } from '@/lib/utils';
+import { cn, getBaseUrl } from '@/lib/utils';
 import type { Form, Field } from '@/types';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/components/ui/Toast';
@@ -649,8 +649,8 @@ function ShareTab({ form }: { form: Form }) {
   const [copied, setCopied] = useState<'link' | 'embed' | null>(null);
   const [publishing, setPublishing] = useState(false);
 
-  // En local mode ou production, on utilise la variable d'environnement ou le window.location
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+  // En local mode ou production, on utilise getBaseUrl pour s'assurer que c'est dynamique
+  const baseUrl = getBaseUrl();
   const publicUrl = `${baseUrl}/f/${form.slug}`;
 
   // QR code via api.qrserver.com
