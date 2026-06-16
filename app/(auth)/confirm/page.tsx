@@ -21,9 +21,10 @@ function ConfirmContent() {
         // Récupérer les paramètres de l'URL
         const token_hash = searchParams.get('token_hash');
         const type = searchParams.get('type');
+        const code = searchParams.get('code');
 
         if (token_hash && type) {
-          // Vérifier le token de confirmation
+          // Vérifier le token de confirmation OTP
           const { error } = await supabase.auth.verifyOtp({
             token_hash,
             type: type as any,
@@ -34,9 +35,25 @@ function ConfirmContent() {
             setError('Lien de confirmation invalide ou expiré');
           } else {
             setConfirmed(true);
-            // Redirection automatique après 3 secondes
             setTimeout(() => {
-              // Vérifier s'il y a une redirection personnalisée (invitation)
+              const redirectUrl = searchParams.get('redirect');
+              if (redirectUrl) {
+                router.push(decodeURIComponent(redirectUrl));
+              } else {
+                router.push('/dashboard');
+              }
+            }, 3000);
+          }
+        } else if (code) {
+          // Échanger le code d'autorisation contre une session (PKCE)
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+          if (error) {
+            console.error('Erreur lors de l\'échange du code:', error);
+            setError('Code de confirmation invalide ou expiré');
+          } else {
+            setConfirmed(true);
+            setTimeout(() => {
               const redirectUrl = searchParams.get('redirect');
               if (redirectUrl) {
                 router.push(decodeURIComponent(redirectUrl));
@@ -46,7 +63,16 @@ function ConfirmContent() {
             }, 3000);
           }
         } else {
-          setError('Paramètres de confirmation manquants');
+          // Si aucun paramètre n'est fourni mais que l'utilisateur est déjà connecté
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            setConfirmed(true);
+            setTimeout(() => {
+              router.push('/dashboard');
+            }, 1500);
+          } else {
+            setError('Paramètres de confirmation manquants');
+          }
         }
       } catch (err) {
         console.error('Erreur lors de la confirmation:', err);
