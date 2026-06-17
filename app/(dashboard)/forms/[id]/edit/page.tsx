@@ -44,40 +44,6 @@ export default function BuilderPage() {
   const [selectedHeaderElement, setSelectedHeaderElement] = useState<'banner' | 'logo' | null>(null);
   const [titleDraft, setTitleDraft] = useState('');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [workspaceName, setWorkspaceName] = useState<string | null>(null);
-
-  // Charger le nom du workspace
-  useEffect(() => {
-    const fetchWorkspaceName = async () => {
-      const isLocal = process.env.NEXT_PUBLIC_LOCAL_MODE === 'true';
-      const wsId = isLocal ? form?.workspace_id : form?.team_id;
-      if (!wsId) return;
-
-      if (isLocal) {
-        try {
-          const { getWorkspace } = await import('@/lib/store/local-workspaces');
-          const ws = getWorkspace(wsId);
-          if (ws) setWorkspaceName(ws.name);
-        } catch (err) {
-          console.error(err);
-        }
-      } else {
-        try {
-          const res = await fetch('/api/teams');
-          if (res.ok) {
-            const list = await res.json();
-            const ws = list.find((t: any) => t.id === wsId);
-            if (ws) setWorkspaceName(ws.name);
-          }
-        } catch (err) {
-          console.error(err);
-        }
-      }
-    };
-    if (form) {
-      fetchWorkspaceName();
-    }
-  }, [form?.workspace_id, form?.team_id, form]);
 
   // Indicateur d'état de sauvegarde (Google Forms / Tally style)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
@@ -616,35 +582,41 @@ export default function BuilderPage() {
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="relative flex items-center">
-            <input
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={handleTitleBlur}
-              maxLength={LIMITS.FORM_TITLE_MAX}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-              }}
-              className="min-w-[200px] bg-transparent font-display text-lg outline-none transition focus:border-b focus:border-accent pr-12"
-            />
-            {titleDraft.length > LIMITS.FORM_TITLE_MAX * 0.7 && (
-              <span className={cn(
-                "absolute right-2 text-[10px] font-mono pointer-events-none select-none",
-                titleDraft.length > LIMITS.FORM_TITLE_MAX * 0.8 ? "text-red-500 font-semibold" : "text-text-tertiary"
-              )}>
-                {titleDraft.length}/{LIMITS.FORM_TITLE_MAX}
+          <div className="flex items-center gap-2">
+            <div className="relative inline-grid">
+              {/* Span miroir invisible — le conteneur prend la largeur du texte réel */}
+              <span
+                style={{ gridRow: '1', gridColumn: '1' }}
+                className="invisible whitespace-pre font-display text-lg pr-8 min-w-[4rem] pointer-events-none select-none"
+                aria-hidden="true"
+              >
+                {titleDraft || ' '}
               </span>
-            )}
-          </div>
-          {workspaceName && (
-            <span className="papyrus-meta ml-2 text-xs flex items-center gap-1.5">
-              <span className="font-semibold text-text-secondary">{workspaceName}</span>
-            </span>
-          )}
-          {form.status === 'draft' && <Badge variant="draft" className="text-xs px-2 py-1">Brouillon</Badge>}
-          {form.status === 'published' && <Badge variant="published" className="text-xs px-2 py-1">Publié</Badge>}
-          <span className={cn(
-            "ml-3 text-[11px] font-medium transition-all duration-300 flex items-center gap-1.5",
+              <input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={handleTitleBlur}
+                maxLength={LIMITS.FORM_TITLE_MAX}
+                size={1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                style={{ gridRow: '1', gridColumn: '1' }}
+                className="w-full border-0 bg-transparent font-display text-lg outline-none transition focus:border-b focus:border-accent pr-8"
+              />
+              {titleDraft.length > LIMITS.FORM_TITLE_MAX * 0.7 && (
+                <span className={cn(
+                  "absolute right-0 top-1/2 -translate-y-1/2 text-[10px] font-mono pointer-events-none select-none",
+                  titleDraft.length > LIMITS.FORM_TITLE_MAX * 0.8 ? "text-red-500 font-semibold" : "text-text-tertiary"
+                )}>
+                  {titleDraft.length}/{LIMITS.FORM_TITLE_MAX}
+                </span>
+              )}
+            </div>
+            {form.status === 'draft' && <Badge variant="draft" className="text-xs px-2 py-1">Brouillon</Badge>}
+            {form.status === 'published' && <Badge variant="published" className="text-xs px-2 py-1">Publié</Badge>}
+            <span className={cn(
+              "text-[11px] font-medium transition-all duration-300 flex items-center gap-1.5",
             saveStatus === 'saved' ? "text-green-600 dark:text-green-400 opacity-80" :
             saveStatus === 'saving' ? "text-amber-500 dark:text-amber-400 font-semibold animate-pulse" :
             "text-text-tertiary"
@@ -668,6 +640,7 @@ export default function BuilderPage() {
               </>
             )}
           </span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button

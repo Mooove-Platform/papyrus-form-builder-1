@@ -46,7 +46,7 @@ export default function SignupPage() {
       emailRedirectTo = `${baseUrl}/confirm?redirect=${encodeURIComponent(inviteRedirect)}`;
     }
 
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -60,7 +60,14 @@ export default function SignupPage() {
       return;
     }
 
-    // Succès : afficher le message de confirmation email
+    // Si "Confirm email" est désactivé dans Supabase, session est directement disponible
+    if (signUpData.session) {
+      const redirectTo = inviteRedirect || '/dashboard';
+      router.replace(redirectTo);
+      return;
+    }
+
+    // Sinon, "Confirm email" est actif → afficher l'écran de confirmation
     setEmailSent(true);
     setLoading(false);
   }

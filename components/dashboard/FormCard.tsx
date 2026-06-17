@@ -103,21 +103,21 @@ export function FormCard({ form, onEdit, onDuplicate, onDelete }: FormCardProps)
                 <div className="absolute right-0 mt-1 w-44 rounded-xl border border-border bg-bg-surface py-1 shadow-lg z-40 animate-in fade-in slide-in-from-top-1 duration-100">
                   <button
                     onClick={(e) => handleActionClick(e, () => onEdit(form.id))}
-                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-lg text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition"
                   >
                     <Edit2 className="h-5 w-5" />
                     Modifier
                   </button>
                   <button
                     onClick={(e) => handleActionClick(e, () => onDuplicate(form.id))}
-                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-lg text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition"
                   >
                     <Copy className="h-5 w-5" />
                     Dupliquer
                   </button>
                   <button
                     onClick={(e) => handleActionClick(e, handleExportJson)}
-                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-lg text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition"
                   >
                     <Download className="h-5 w-5" />
                     Exporter (JSON)
@@ -125,7 +125,7 @@ export function FormCard({ form, onEdit, onDuplicate, onDelete }: FormCardProps)
                   <div className="my-1 border-t border-border" />
                   <button
                     onClick={(e) => handleActionClick(e, () => setShowDeleteModal(true))}
-                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-lg text-danger hover:bg-danger/5 transition"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/5 transition"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Supprimer
@@ -138,11 +138,11 @@ export function FormCard({ form, onEdit, onDuplicate, onDelete }: FormCardProps)
 
         {/* Title */}
         <div className="mt-4 flex-1">
-          <h4 className="font-display text-3xl font-bold text-text-primary line-clamp-2 leading-snug group-hover:text-accent transition-colors">
+          <h4 className="font-display text-xl font-bold text-text-primary line-clamp-2 leading-snug group-hover:text-accent transition-colors">
             {form.title || 'Formulaire sans titre'}
           </h4>
           {form.description && (
-            <p className="text-lg text-text-tertiary mt-1 line-clamp-1">
+            <p className="text-xs text-text-tertiary mt-1 line-clamp-1">
               {form.description}
             </p>
           )}

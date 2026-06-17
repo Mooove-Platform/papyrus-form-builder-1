@@ -334,101 +334,121 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
                   height: '160px'
                 }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={theme.banner_url!}
-                  alt="Bannière"
-                  draggable={false}
-                  style={{
-                    position: 'absolute',
-                    left: imgX + 'px',
-                    top: imgY + 'px',
-                    width: imgW + 'px',
-                    height: imgH + 'px',
-                    objectFit: 'fill',  // pas de rognage CSS natif
-                    userSelect: 'none',
-                    pointerEvents: 'none',
-                  }}
-                  onLoad={(e) => {
-                    const el = e.currentTarget;
-                    const nw = el.naturalWidth;
-                    const nh = el.naturalHeight;
-                    setNatSize({ w: nw, h: nh });
-                    const cw = containerRef.current?.offsetWidth ?? 600;
-                    const ch = containerRef.current?.offsetHeight ?? 160;
+                {preview ? (
+                  // Mode preview/public : object-fit pour un rendu responsive cohérent
+                  // indépendant de la largeur du container (fix décalage builder vs publié)
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={theme.banner_url!}
+                    alt="Bannière"
+                    draggable={false}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      objectPosition: `${posXpct}% ${posYpct}%`,
+                      display: 'block',
+                      userSelect: 'none',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                ) : (
+                  <>
+                    {/* Mode éditeur : positionnement pixel pour contrôle précis */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={theme.banner_url!}
+                      alt="Bannière"
+                      draggable={false}
+                      style={{
+                        position: 'absolute',
+                        left: imgX + 'px',
+                        top: imgY + 'px',
+                        width: imgW + 'px',
+                        height: imgH + 'px',
+                        objectFit: 'fill',
+                        userSelect: 'none',
+                        pointerEvents: 'none',
+                      }}
+                      onLoad={(e) => {
+                        const el = e.currentTarget;
+                        const nw = el.naturalWidth;
+                        const nh = el.naturalHeight;
+                        setNatSize({ w: nw, h: nh });
+                        const cw = containerRef.current?.offsetWidth ?? 600;
+                        const ch = containerRef.current?.offsetHeight ?? 160;
 
-                    // Ne recalcule PAS si l'utilisateur a déjà ajusté manuellement
-                    // Détecte "premier chargement" = pas de scale sauvegardé ou scale === 1
-                    const isFirstLoad = !theme.banner_scale || theme.banner_scale === 1;
-                    if (!isFirstLoad || !onThemeChange) return;
+                        const isFirstLoad = !theme.banner_scale || theme.banner_scale === 1;
+                        if (!isFirstLoad || !onThemeChange) return;
 
-                    const fit = theme.banner_fit ?? 'cover';
+                        const fit = theme.banner_fit ?? 'cover';
 
-                    if (fit === 'cover') {
-                      const scaleX = cw / nw;
-                      const scaleY = ch / nh;
-                      const coverRatio = Math.max(scaleX, scaleY);
-                      const imgW = Math.round(nw * coverRatio);
-                      const imgH = Math.round(nh * coverRatio);
-                      const posY = Math.round((ch - imgH) / 2);
-                      const posX = Math.round((cw - imgW) / 2);
-                      const scale = Math.round((imgW / cw) * 100) / 100;
-                      onThemeChange({
-                        banner_scale: scale,
-                        banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
-                        banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
-                      });
-                    }
+                        if (fit === 'cover') {
+                          const scaleX = cw / nw;
+                          const scaleY = ch / nh;
+                          const coverRatio = Math.max(scaleX, scaleY);
+                          const imgW = Math.round(nw * coverRatio);
+                          const imgH = Math.round(nh * coverRatio);
+                          const posY = Math.round((ch - imgH) / 2);
+                          const posX = Math.round((cw - imgW) / 2);
+                          const scale = Math.round((imgW / cw) * 100) / 100;
+                          onThemeChange({
+                            banner_scale: scale,
+                            banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
+                            banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
+                          });
+                        }
 
-                    if (fit === 'contain') {
-                      const scaleX = cw / nw;
-                      const scaleY = ch / nh;
-                      const containRatio = Math.min(scaleX, scaleY);
-                      const imgW = Math.round(nw * containRatio);
-                      const imgH = Math.round(nh * containRatio);
-                      const posX = Math.round((cw - imgW) / 2);
-                      const posY = Math.round((ch - imgH) / 2);
-                      const scale = Math.round((imgW / cw) * 100) / 100;
-                      onThemeChange({
-                        banner_scale: Math.max(0.05, scale),
-                        banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
-                        banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
-                      });
-                    }
-                  }}
-                />
+                        if (fit === 'contain') {
+                          const scaleX = cw / nw;
+                          const scaleY = ch / nh;
+                          const containRatio = Math.min(scaleX, scaleY);
+                          const imgW = Math.round(nw * containRatio);
+                          const imgH = Math.round(nh * containRatio);
+                          const posX = Math.round((cw - imgW) / 2);
+                          const posY = Math.round((ch - imgH) / 2);
+                          const scale = Math.round((imgW / cw) * 100) / 100;
+                          onThemeChange({
+                            banner_scale: Math.max(0.05, scale),
+                            banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
+                            banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
+                          });
+                        }
+                      }}
+                    />
 
-                {/* Zone de drag centrale */}
-                {isEditing && (
-                  <div
-                    onMouseDown={handlePanStart}
-                    className="absolute inset-0 cursor-grab active:cursor-grabbing"
-                    style={{ zIndex: 5 }}
-                  >
-                    {/* Icône de déplacement centrale */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    {/* Zone de drag centrale */}
+                    {isEditing && (
                       <div
-                        className="flex items-center justify-center"
-                        style={{
-                          width: '36px',
-                          height: '36px',
-                          backgroundColor: 'rgba(0,0,0,0.4)',
-                          borderRadius: '50%'
-                        }}
+                        onMouseDown={handlePanStart}
+                        className="absolute inset-0 cursor-grab active:cursor-grabbing"
+                        style={{ zIndex: 5 }}
                       >
-                        <Move className="h-5 w-5 text-white" />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div
+                            className="flex items-center justify-center"
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              backgroundColor: 'rgba(0,0,0,0.4)',
+                              borderRadius: '50%'
+                            }}
+                          >
+                            <Move className="h-5 w-5 text-white" />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                )}
+                    )}
 
-                {/* Overlay de sélection simple en mode éditeur (non sélectionnée) */}
-                {!preview && selectedElement !== 'banner' && (
-                  <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
-                    <div className="opacity-0 hover:opacity-100 bg-white/90 px-3 py-1 rounded-md text-sm text-text-primary">
-                      Cliquer pour modifier la bannière
-                    </div>
-                  </div>
+                    {/* Overlay de sélection en mode éditeur (non sélectionnée) */}
+                    {selectedElement !== 'banner' && (
+                      <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
+                        <div className="opacity-0 hover:opacity-100 bg-white/90 px-3 py-1 rounded-md text-sm text-text-primary">
+                          Cliquer pour modifier la bannière
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 

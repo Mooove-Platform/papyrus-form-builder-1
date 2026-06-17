@@ -23,7 +23,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="space-y-1.5">
         {label && (
-          <label htmlFor={inputId} className="block text-xl text-text-secondary">
+          <label htmlFor={inputId} className="block text-sm text-text-secondary">
             {label}
           </label>
         )}
@@ -34,8 +34,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             maxLength={maxLength}
             type={isPasswordType && showPassword ? 'text' : type}
             className={cn(
-              'h-14 w-full rounded-md border bg-bg-surface px-5 text-xl text-text-primary',
-              isPasswordType && 'pr-12',
+              'h-9 w-full rounded-md border bg-bg-surface px-3 text-sm text-text-primary',
+              isPasswordType && 'pr-10',
               'placeholder:text-text-tertiary',
               'transition focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-cta/20',
               error ? 'border-danger' : 'border-border-strong',
@@ -55,7 +55,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           )}
         </div>
         {(hint || error || showCharCounter) && (
-          <div className="flex items-start justify-between gap-2 text-lg">
+          <div className="flex items-start justify-between gap-2 text-xs">
             <div className="flex-1">
               {error ? (
                 <p className="text-danger font-medium">{error}</p>
@@ -66,7 +66,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {showCharCounter && (
               <span
                 className={cn(
-                  'shrink-0 text-text-tertiary font-mono select-none text-base',
+                  'shrink-0 text-text-tertiary font-mono select-none text-xs',
                   currentLength > maxLength * 0.8 && 'text-red-500 font-semibold'
                 )}
               >

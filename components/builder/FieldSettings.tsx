@@ -447,7 +447,7 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
 
       {field.type === 'rating' && (
         <Section title="Échelle">
-          <label className="block text-sm text-text-secondary">Nombre d&apos;étoiles</label>
+          <label className="block text-xs text-text-secondary">Nombre d&apos;étoiles</label>
           <select
             value={field.validation?.max ?? 5}
             onChange={(e) => patchValidation({ max: Number(e.target.value) })}
@@ -488,7 +488,7 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
       {field.type === 'short_text' && (
         <Section title="Type de réponse">
           <div>
-            <label className="block text-sm text-text-secondary">Type de réponse</label>
+            <label className="block text-xs text-text-secondary">Type de réponse</label>
             <div className="mt-1.5 grid grid-cols-3 gap-1.5">
               {([
                 { value: 'text', label: 'Texte' },
@@ -538,7 +538,7 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
 
               {field.validation?.response_type === 'decimal' && (
                 <div>
-                  <label className="block text-sm text-text-secondary">Décimales max</label>
+                  <label className="block text-xs text-text-secondary">Décimales max</label>
                   <div className="mt-1.5 grid grid-cols-3 gap-1.5">
                     {[1, 2, 3].map((n) => {
                       const active = (field.validation?.max_decimals ?? 2) === n;
@@ -561,7 +561,7 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
               )}
 
               <div>
-                <label className="block text-sm text-text-secondary">Unité</label>
+                <label className="block text-xs text-text-secondary">Unité</label>
                 <select
                   value={field.validation?.unit ?? 'none'}
                   onChange={(e) => patchValidation({ unit: e.target.value as 'none' | 'euro' | 'dollar' | 'pound' | 'rupee' | 'mur' | 'kg' | 'g' | 'lb' | 'cm' | 'm' | 'ft' | 'in' | 'miles' | 'arpent' | 'percent' })}
@@ -604,7 +604,7 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
                     ...(checked && { unit: 'none' })
                   })}
                 />
-                <label className="text-sm text-text-secondary">
+                <label className="text-xs text-text-secondary">
                   Laisser le répondant choisir l&apos;unité
                 </label>
               </div>
@@ -787,7 +787,7 @@ function MediaSettings({ field, patchValidation, fileInputRef, handleImageUpload
           {/* Alignement pour image et vidéo */}
           {(field.type === 'image' || field.type === 'video') && (
             <div>
-              <label className="block text-sm text-text-secondary">Alignement</label>
+              <label className="block text-xs text-text-secondary">Alignement</label>
               <div className="mt-1.5 grid grid-cols-3 gap-1.5">
                 {(['left', 'center', 'right'] as const).map((a) => (
                   <button

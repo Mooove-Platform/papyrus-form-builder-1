@@ -14,7 +14,7 @@ export function SettingsHeader({ icon: Icon, title, description, className }: Se
     <div className={cn('space-y-2', className)}>
       <div className="flex items-center gap-3">
         <Icon className="w-6 h-6 text-mooove-navy" />
-        <h1 className="text-3xl font-display font-semibold text-mooove-navy">
+        <h1 className="text-xl font-display font-semibold text-mooove-navy">
           {title}
         </h1>
       </div>

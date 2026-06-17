@@ -95,7 +95,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
           >
             {/* Header */}
             <div className="flex items-center justify-between pb-4 border-b border-border mb-4">
-              <h3 id="modal-title" className="font-display text-3xl font-bold text-text-primary">
+              <h3 id="modal-title" className="font-display text-lg font-bold text-text-primary">
                 {title}
               </h3>
               <button
@@ -108,7 +108,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
             </div>
 
             {/* Contenu */}
-            <div className="text-xl text-text-secondary">
+            <div className="text-sm text-text-secondary">
               {children}
             </div>
           </motion.div>

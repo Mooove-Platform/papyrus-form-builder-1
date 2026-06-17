@@ -13,6 +13,7 @@ import {
   Download,
   Edit3,
   ExternalLink,
+  FolderOpen,
   LayoutTemplate,
   Link2,
   ListChecks,
@@ -134,6 +135,23 @@ function FormDashboardContent() {
     }
   }
 
+  async function handleCopyLink() {
+    const baseUrl = getBaseUrl();
+    const publicUrl = `${baseUrl}/f/${form!.slug}`;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      toast.success('Lien copié !');
+    } catch {
+      toast.error(`Copiez manuellement : ${publicUrl}`);
+    }
+    setMenuOpen(false);
+  }
+
+  function handleMove() {
+    toast.info('Déplacer vers un espace de travail — bientôt disponible');
+    setMenuOpen(false);
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-8">
       {/* Header */}
@@ -146,6 +164,8 @@ function FormDashboardContent() {
         onArchiveToggle={handleArchiveToggle}
         onToggleTemplate={handleToggleTemplate}
         onDelete={handleDelete}
+        onCopyLink={handleCopyLink}
+        onMove={handleMove}
       />
 
       {/* Stats — placeholder en attendant v0.2 */}
@@ -193,7 +213,9 @@ function Header({
   onClone,
   onArchiveToggle,
   onToggleTemplate,
-  onDelete
+  onDelete,
+  onCopyLink,
+  onMove
 }: {
   form: Form;
   workspaceName: string | null;
@@ -203,6 +225,8 @@ function Header({
   onArchiveToggle: () => void;
   onToggleTemplate: () => void;
   onDelete: () => void;
+  onCopyLink: () => void;
+  onMove: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -255,10 +279,22 @@ function Header({
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
               <div className="absolute right-0 top-full z-20 mt-1.5 w-60 overflow-hidden rounded-md border border-border bg-bg-surface shadow-lg">
                 <MenuItem
+                  icon={<Link2 className="h-4 w-4" />}
+                  label="Copier le lien de partage"
+                  hint="Copie l'URL publique du formulaire"
+                  onClick={onCopyLink}
+                />
+                <MenuItem
                   icon={<Copy className="h-4 w-4" />}
                   label="Cloner"
                   hint="Crée une copie en brouillon"
                   onClick={onClone}
+                />
+                <MenuItem
+                  icon={<FolderOpen className="h-4 w-4" />}
+                  label="Déplacer"
+                  hint="Vers un autre espace de travail"
+                  onClick={onMove}
                 />
                 <MenuItem
                   icon={<LayoutTemplate className="h-4 w-4" />}

@@ -87,7 +87,7 @@ export function PreviewModal({ form, onClose }: Props) {
 
       {/* Animation du parchemin pour le contenu seulement - isolation du stacking context */}
       <div
-        className="flex h-full w-full flex-1 flex-col relative z-0"
+        className="flex h-[calc(100%-3.5rem)] w-full flex-col relative z-0 min-h-0"
         style={{ transformOrigin: 'top center' }}
       >
         {activeTab === 'preview' && form.save_and_resume && <SaveResumeBar formId={form.id} containerRef={contentRef} />}
@@ -344,6 +344,24 @@ function PreviewFieldCard({
     field.validation?.respondent_mode_enabled === true;
 
   if (['file', 'image', 'video'].includes(field.type) && !isRespondentUpload) {
+    const hasCustomLabel = field.validation?.show_title && field.label.fr && field.label.fr !== 'Nouvelle question';
+    if (hasCustomLabel) {
+      return (
+        <div
+          className={cn(
+            'min-w-0 rounded-lg border border-border p-5',
+            span,
+            form.theme.field_bg_color ? '' : 'bg-bg-surface'
+          )}
+          style={{ backgroundColor: form.theme.field_bg_color }}
+        >
+          <FieldQuestion field={field} theme={form.theme} globalStyle={form.theme.field_style} />
+          <div className="mt-4">
+            <FieldRenderer field={field} preview={true} mobile={device === 'mobile'} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className={span}>
         <FieldRenderer field={field} preview={true} mobile={device === 'mobile'} />

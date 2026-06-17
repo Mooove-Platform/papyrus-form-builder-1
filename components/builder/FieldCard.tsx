@@ -281,7 +281,7 @@ export const FieldCard = memo(function FieldCard({
           {field.required && <span className="shrink-0 text-danger">*</span>}
         </div>
       ) : (
-        !isImage && !isVideo && (
+        !isImage && !isVideo && !isFile && (
           <div className="mb-1.5 flex items-center gap-2">
             {isIconVisible(field, theme) && (
               <span
@@ -332,8 +332,8 @@ export const FieldCard = memo(function FieldCard({
         )
       )}
 
-      {/* Description — éditable inline (pas pour section_break, image, vidéo) */}
-      {!isSectionBreak && !isImage && !isVideo && (
+      {/* Description — éditable inline (pas pour section_break, image, vidéo, fichier) */}
+      {!isSectionBreak && !isImage && !isVideo && !isFile && (
         <AutoTextarea
           value={field.description.fr ?? ''}
           onChange={(e) => patchText('description', e.target.value)}

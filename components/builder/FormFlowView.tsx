@@ -37,6 +37,7 @@ interface RenderNode {
   y: number;
   w: number;
   h: number;
+  lines?: string[];
 }
 
 interface RenderEdge {
@@ -45,7 +46,11 @@ interface RenderEdge {
   toId: string;
   path: string;
   isDefault: boolean;
+  isConditionalSource?: boolean;
   label?: string;
+  labelType?: 'oui' | 'sinon';
+  labelX?: number;
+  labelY?: number;
 }
 
 function getFieldTypeLabel(type: string): string {
@@ -125,6 +130,55 @@ function getConditionLabel(rule: LogicRule, fields: Field[]): string {
   return `Si (${condTexts.join(op)})`;
 }
 
+function getDecisionLines(rule: LogicRule, fields: Field[]): string[] {
+  if (!rule.conditions || rule.conditions.length === 0) {
+    return ['Si rempli ?'];
+  }
+
+  const condTexts = rule.conditions.map(c => {
+    const sourceField = fields.find(f => f.id === c.source_field_id);
+    let valText = c.value;
+    if (sourceField && sourceField.options) {
+      const opt = sourceField.options.find(o => o.id === c.value);
+      if (opt && opt.label?.fr) {
+        valText = opt.label.fr;
+      }
+    }
+
+    let opSymbol = '';
+    switch (c.operator) {
+      case 'equals': opSymbol = '='; break;
+      case 'not_equals': opSymbol = '≠'; break;
+      case 'contains': return `contient "${valText}"`;
+      case 'not_contains': return `ne contient pas "${valText}"`;
+      case 'greater_than': opSymbol = '>'; break;
+      case 'less_than': opSymbol = '<'; break;
+      default: opSymbol = c.operator;
+    }
+    return `${opSymbol} "${valText}"`;
+  });
+
+  const formattedConds = condTexts.map(ct => `Réponse ${ct}`);
+
+  if (formattedConds.length === 1) {
+    return [`${formattedConds[0]} ?`];
+  }
+
+  const opText = rule.conditions_operator === 'OR' ? '— OU —' : '— ET —';
+  const lines: string[] = [];
+  formattedConds.forEach((cond, index) => {
+    if (index > 0) {
+      lines.push(opText);
+    }
+    if (index === formattedConds.length - 1) {
+      lines.push(`${cond} ?`);
+    } else {
+      lines.push(cond);
+    }
+  });
+  return lines;
+}
+
 function truncateText(text: string, maxLen = 22): string {
   if (!text) return '';
   return text.length > maxLen ? text.substring(0, maxLen) + '...' : text;
@@ -153,12 +207,10 @@ export function FormFlowView({ form }: Props) {
     // Paramètres graphiques premium
     const nodeW = 240;
     const nodeH = 72;
-    const decisionW = 140;
-    const decisionH = 32;
     const endW = 160;
     const endH = 40;
     const colW = 340;
-    const rowH = 180;
+    const rowH = 240; // Spacing augmenté pour loger les losanges et les lignes orthogonales
     const centerX = 450;
     const paddingY = 60;
 
@@ -191,7 +243,7 @@ export function FormFlowView({ form }: Props) {
       childRules.forEach((r, index) => {
         const targetId = r.target_field_id!;
         if (colMap[targetId] === undefined) {
-          const direction = index % 2 === 0 ? -1 : 1;
+          const direction = index % 2 === 0 ? 1 : -1;
           const step = Math.floor(index / 2) + 1;
           const targetCol = currentCol + direction * step;
           colMap[targetId] = targetCol;
@@ -246,6 +298,11 @@ export function FormFlowView({ form }: Props) {
       const K = fieldRules.length;
 
       fieldRules.forEach((rule, j) => {
+        const decisionLines = getDecisionLines(rule, fields);
+        const maxLineLen = Math.max(...decisionLines.map(l => l.length));
+        const decisionW = Math.max(140, maxLineLen * 9.5);
+        const decisionH = Math.max(56, decisionLines.length * 18 + 16);
+
         const decisionCol = fCol + (j - (K - 1) / 2) * 0.45;
         const x = centerX + decisionCol * colW - decisionW / 2;
         const y = paddingY + fRow * rowH + nodeH + 40;
@@ -254,7 +311,8 @@ export function FormFlowView({ form }: Props) {
         nodes.push({
           id: decisionId,
           type: 'decision',
-          label: getConditionLabel(rule, fields),
+          label: decisionLines.join(' '),
+          lines: decisionLines,
           x,
           y,
           w: decisionW,
@@ -266,48 +324,44 @@ export function FormFlowView({ form }: Props) {
           id: `edge-${f.id}-${decisionId}`,
           fromId: f.id,
           toId: decisionId,
-          path: getBezierPath(
-            centerX + fCol * colW,
-            paddingY + fRow * rowH + nodeH,
-            x + decisionW / 2,
-            y
-          ),
+          path: `M ${centerX + fCol * colW} ${paddingY + fRow * rowH + nodeH} V ${y}`,
           isDefault: false
         });
 
-        // Liaison : Décision -> Cible
+        // Liaison : Décision -> Cible (Branche "vraie" / oui)
+        // Départ du sommet droit du losange : (startX, startY)
+        const startX = x + decisionW;
+        const startY = y + decisionH / 2;
+
+        let endX = centerX;
+        let endY = paddingY + fields.length * rowH;
+
         if (rule.action_type === 'end_form') {
-          edges.push({
-            id: `edge-${decisionId}-end`,
-            fromId: decisionId,
-            toId: 'end_form',
-            path: getBezierPath(
-              x + decisionW / 2,
-              y + decisionH,
-              centerX,
-              paddingY + fields.length * rowH
-            ),
-            isDefault: false
-          });
+          endX = centerX;
+          endY = paddingY + fields.length * rowH;
         } else if (rule.target_field_id) {
           const target = fields.find(tf => tf.id === rule.target_field_id);
           if (target) {
             const tRow = fields.indexOf(target);
             const tCol = colMap[target.id];
-            edges.push({
-              id: `edge-${decisionId}-${target.id}`,
-              fromId: decisionId,
-              toId: target.id,
-              path: getBezierPath(
-                x + decisionW / 2,
-                y + decisionH,
-                centerX + tCol * colW,
-                paddingY + tRow * rowH
-              ),
-              isDefault: false
-            });
+            endX = centerX + tCol * colW;
+            endY = paddingY + tRow * rowH;
           }
         }
+
+        // Routing orthogonal pour la branche "vraie" : L-shape simple H -> V
+        const truePath = `M ${startX} ${startY} H ${endX} V ${endY}`;
+
+        edges.push({
+          id: `edge-${decisionId}-${rule.action_type === 'end_form' ? 'end' : rule.target_field_id}`,
+          fromId: decisionId,
+          toId: rule.action_type === 'end_form' ? 'end_form' : rule.target_field_id!,
+          path: truePath,
+          isDefault: false,
+          labelType: 'oui',
+          labelX: startX + 20,
+          labelY: startY
+        });
       });
     });
 
@@ -341,35 +395,59 @@ export function FormFlowView({ form }: Props) {
       const fCol = colMap[f.id];
       const fRow = index;
 
-      const hasFieldRules = rules.some(r => r.conditions?.some(c => c.source_field_id === f.id));
-      let pathStr = '';
+      const fieldRules = rules.filter(r => r.conditions?.some(c => c.source_field_id === f.id)).sort((a, b) => a.rule_order - b.rule_order);
+      const hasFieldRules = fieldRules.length > 0;
 
-      // Si le champ a des règles conditionnelles, on dévie la ligne par défaut sur la gauche pour éviter les chevauchements
-      if (hasFieldRules && fCol === 0 && targetCol === 0) {
-        const startX = centerX + fCol * colW;
-        const startY = paddingY + fRow * rowH + nodeH;
-        const endX = centerX + targetCol * colW;
-        const endY = paddingY + targetRow * rowH;
-        pathStr = `M ${startX} ${startY} C ${startX - 180} ${startY + 30} ${endX - 180} ${endY - 30} ${endX} ${endY}`;
-      } else {
-        pathStr = getBezierPath(
-          centerX + fCol * colW,
-          paddingY + fRow * rowH + nodeH,
-          centerX + targetCol * colW,
-          paddingY + targetRow * rowH
-        );
+      let startX = centerX + fCol * colW;
+      let startY = paddingY + fRow * rowH + nodeH;
+
+      let labelX: number | undefined;
+      let labelY: number | undefined;
+
+      if (hasFieldRules) {
+        // Le point de départ devient le bas du dernier losange de décision
+        const lastRule = fieldRules[fieldRules.length - 1];
+        const lastDecisionId = `decision-${lastRule.id}`;
+        
+        // Trouver le nœud de décision correspondant déjà inséré pour récupérer ses dimensions
+        const decisionNode = nodes.find(n => n.id === lastDecisionId);
+        if (decisionNode) {
+          startX = decisionNode.x + decisionNode.w / 2;
+          startY = decisionNode.y + decisionNode.h;
+          
+          labelX = startX;
+          labelY = startY + 18;
+        }
       }
+
+      const endX = centerX + targetCol * colW;
+      const endY = paddingY + targetRow * rowH;
+
+      // Routing orthogonal : V court -> H -> V long si décalage, V direct si alignés
+      let pathStr = '';
+      if (endX === startX) {
+        pathStr = `M ${startX} ${startY} V ${endY}`;
+      } else {
+        const midY = startY + 30;
+        pathStr = `M ${startX} ${startY} V ${midY} H ${endX} V ${endY}`;
+      }
+
+      const isCondSource = conditionalFields.has(f.id);
 
       edges.push({
         id: `default-${f.id}-${targetId}`,
         fromId: f.id,
         toId: targetId,
         path: pathStr,
-        isDefault: true
+        isDefault: true,
+        isConditionalSource: isCondSource,
+        labelType: (hasFieldRules && !isCondSource) ? 'sinon' : undefined,
+        labelX: (hasFieldRules && !isCondSource) ? labelX : undefined,
+        labelY: (hasFieldRules && !isCondSource) ? labelY : undefined
       });
     });
 
-    // 7. Calculer les dimensions de la zone de dessin
+    // 7. Calculer les dimensions de la zone de dessin (symétrique)
     let minCol = 0;
     let maxCol = 0;
     Object.values(colMap).forEach(c => {
@@ -377,8 +455,9 @@ export function FormFlowView({ form }: Props) {
       if (c > maxCol) maxCol = c;
     });
 
-    const marginL = minCol * colW - nodeW / 2 - 80;
-    const marginR = maxCol * colW + nodeW / 2 + 80;
+    const maxAbsCol = Math.max(Math.abs(minCol), Math.abs(maxCol));
+    const marginL = -maxAbsCol * colW - nodeW / 2 - 80;
+    const marginR = maxAbsCol * colW + nodeW / 2 + 80;
 
     const leftX = centerX + marginL;
     const rightX = centerX + marginR;
@@ -419,7 +498,7 @@ export function FormFlowView({ form }: Props) {
       )}
 
       {/* Container scrollable de l'arbre */}
-      <div className="flex-1 overflow-auto p-12 flex items-start justify-start select-none">
+      <div className="flex-1 overflow-auto p-12 flex items-start justify-center select-none">
         <svg
           width={layout.width}
           height={layout.height}
@@ -454,6 +533,17 @@ export function FormFlowView({ form }: Props) {
             >
               <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#94A3B8" />
             </marker>
+            <marker
+              id="arrow-amber"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#854F0B" />
+            </marker>
           </defs>
 
           {/* 0. Grille de fond pro */}
@@ -463,22 +553,95 @@ export function FormFlowView({ form }: Props) {
           <g transform={`translate(${-layout.minX}, 0)`}>
             {/* 1. Rendu des lignes de transition */}
             {layout.edges.map(edge => {
-              const markerId = edge.isDefault ? 'arrow-default' : 'arrow-accent';
+              let strokeColor = '#94A3B8';
+              let strokeWidth = 1.5;
+              let isDashed = edge.isDefault && !edge.isConditionalSource;
+              let markerId = 'arrow-default';
+
+              if (edge.labelType === 'oui' || edge.isConditionalSource) {
+                strokeColor = '#854F0B';
+                strokeWidth = 2;
+                markerId = 'arrow-amber';
+              } else if (!edge.isDefault) {
+                strokeColor = accentColor;
+                strokeWidth = 1.5;
+                markerId = 'arrow-accent';
+              }
+
               return (
                 <path
                   key={edge.id}
                   d={edge.path}
                   fill="none"
-                  stroke={edge.isDefault ? '#94A3B8' : accentColor}
-                  strokeWidth={edge.isDefault ? 1.5 : 2}
-                  strokeDasharray={edge.isDefault ? '5,5' : undefined}
+                  stroke={strokeColor}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={isDashed ? '5,5' : undefined}
                   markerEnd={`url(#${markerId})`}
                   className="transition-all duration-300"
                 />
               );
             })}
 
-            {/* 2. Rendu des nœuds avec foreignObject pour un design HTML5/Tailwind sublime */}
+            {/* 1b. Rendu des pastilles de labels d'arêtes */}
+            {layout.edges.map(edge => {
+              if (!edge.labelType || edge.labelX === undefined || edge.labelY === undefined) return null;
+
+              if (edge.labelType === 'oui') {
+                return (
+                  <g key={`label-${edge.id}`} className="select-none pointer-events-none">
+                    <rect
+                      x={edge.labelX - 18}
+                      y={edge.labelY - 9}
+                      width={36}
+                      height={18}
+                      rx={9}
+                      fill="#FAEEDA"
+                      stroke="#EF9F27"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={edge.labelX}
+                      y={edge.labelY}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      className="fill-[#854F0B] text-[9px] font-bold"
+                    >
+                      oui
+                    </text>
+                  </g>
+                );
+              }
+
+              if (edge.labelType === 'sinon') {
+                return (
+                  <g key={`label-${edge.id}`} className="select-none pointer-events-none">
+                    <rect
+                      x={edge.labelX - 22}
+                      y={edge.labelY - 9}
+                      width={44}
+                      height={18}
+                      rx={9}
+                      fill="#F1EFE8"
+                      stroke="#CBD5E1"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={edge.labelX}
+                      y={edge.labelY}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      className="fill-[#64748B] text-[9px] font-bold"
+                    >
+                      sinon
+                    </text>
+                  </g>
+                );
+              }
+
+              return null;
+            })}
+
+            {/* 2. Rendu des nœuds avec foreignObject/SVG pour un design sublime */}
             {layout.nodes.map(node => {
               if (node.type === 'field') {
                 const isConditional = node.isConditional;
@@ -539,21 +702,38 @@ export function FormFlowView({ form }: Props) {
               }
 
               if (node.type === 'decision') {
+                const points = `${node.x + node.w / 2},${node.y} ${node.x + node.w},${node.y + node.h / 2} ${node.x + node.w / 2},${node.y + node.h} ${node.x},${node.y + node.h / 2}`;
+                const lines = node.lines || [node.label];
+                
                 return (
-                  <foreignObject
-                    key={node.id}
-                    x={node.x}
-                    y={node.y}
-                    width={node.w}
-                    height={node.h}
-                    className="overflow-visible"
-                  >
-                    <div className="flex items-center justify-center h-full w-full bg-cyan-50 border border-cyan-200 rounded-full shadow-sm px-3.5 py-1 text-center hover:bg-cyan-100/80 transition-all duration-300">
-                      <span className="text-cyan-800 text-[10px] font-bold truncate select-none tracking-wide">
-                        {node.label}
-                      </span>
-                    </div>
-                  </foreignObject>
+                  <g key={node.id} className="group cursor-default">
+                    <polygon
+                      points={points}
+                      fill="#FAEEDA"
+                      stroke="#EF9F27"
+                      strokeWidth={1.5}
+                      className="transition-all duration-300 group-hover:fill-[#FCEFD9] group-hover:stroke-[#E08F18]"
+                    />
+                    <text
+                      x={node.x + node.w / 2}
+                      textAnchor="middle"
+                      className="fill-slate-800 text-[10px] font-bold select-none pointer-events-none tracking-wide"
+                    >
+                      {lines.map((line, idx) => {
+                        const lineY = node.y + node.h / 2 + (idx - (lines.length - 1) / 2) * 14;
+                        return (
+                          <tspan
+                            key={idx}
+                            x={node.x + node.w / 2}
+                            y={lineY}
+                            dominantBaseline="central"
+                          >
+                            {line}
+                          </tspan>
+                        );
+                      })}
+                    </text>
+                  </g>
                 );
               }
 
@@ -584,6 +764,35 @@ export function FormFlowView({ form }: Props) {
             })}
           </g>
         </svg>
+      </div>
+
+      {/* Légende en overlay fixe */}
+      <div className="absolute bottom-6 left-6 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl p-4 shadow-sm z-10 flex flex-col gap-2.5 text-[11px] text-slate-600 max-w-[280px]">
+        <span className="font-semibold text-slate-800 uppercase tracking-wider text-[9px]">Légende</span>
+        
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-3.5 rounded bg-white border border-slate-200 border-l-[3px] shrink-0" style={{ borderLeftColor: accentColor }} />
+          <span className="font-medium text-slate-700">Question standard</span>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-3.5 rounded bg-white border border-orange-200 border-l-[3px] border-l-orange-500 shrink-0" />
+          <span className="font-medium text-slate-700">Question conditionnelle</span>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 flex items-center justify-center shrink-0">
+            <svg width="14" height="14" viewBox="0 0 20 20">
+              <polygon points="10,0 20,10 10,20 0,10" fill="#FAEEDA" stroke="#EF9F27" strokeWidth="1.5" />
+            </svg>
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="font-medium text-slate-700">Point de décision</span>
+            <span className="text-[10px] text-slate-400 leading-tight">
+              <span className="text-[#854F0B] font-semibold">oui</span> (ligne pleine) / <span className="text-slate-500 font-semibold">sinon</span> (pointillé)
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

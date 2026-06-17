@@ -105,7 +105,7 @@ export function ToastContainer() {
           >
             <Icon className={cn('h-5 w-5 shrink-0 mt-0.5', iconColor)} />
             
-            <div className="flex-1 text-xl text-text-primary font-medium leading-relaxed break-words">
+            <div className="flex-1 text-sm text-text-primary font-medium leading-relaxed break-words">
               {t.message}
               {t.action && (
                 <button
@@ -113,7 +113,7 @@ export function ToastContainer() {
                     t.action?.onClick();
                     removeToast(t.id);
                   }}
-                  className="mt-2 block text-lg font-semibold text-mooove-navy hover:underline text-left transition"
+                  className="mt-1.5 block text-xs font-semibold text-mooove-navy hover:underline text-left transition"
                 >
                   {t.action.label}
                 </button>

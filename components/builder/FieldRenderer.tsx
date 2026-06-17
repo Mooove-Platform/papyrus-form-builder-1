@@ -208,7 +208,7 @@ export function FieldRenderer({
           type="date"
           name={field.id}
           required={required && !preview}
-          className={baseInput}
+          className={cn(baseInput, 'min-w-0 max-w-full')}
           disabled={preview}
           value={value || ''}
           onChange={(e) => onValueChange && onValueChange(e.target.value)}
@@ -1293,7 +1293,7 @@ function MediaField({ field, preview, required, type, onChange, globalStyle, val
           type={type}
           labels={labels[type]}
           onChange={onChange}
-          canSwitchMode={finalRespondentMode}
+          canSwitchMode={true}
           globalStyle={globalStyle}
         />
       )}
@@ -1869,23 +1869,6 @@ function CreatorContent({ type, mediaUrl, alignment, field, compact = false, pre
         </div>
       );
 
-      if (showTitle && title && preview) {
-        return (
-          <div className="space-y-3">
-            <div
-              className={cn(
-                'text-text-primary leading-snug',
-                labelClass
-              )}
-              style={labelInlineStyle}
-            >
-              {title}
-            </div>
-            {imageElement}
-          </div>
-        );
-      }
-
       return imageElement;
     }
 
@@ -1940,15 +1923,6 @@ function CreatorContent({ type, mediaUrl, alignment, field, compact = false, pre
         />
       </div>
     );
-
-    if (showTitle && title && preview) {
-      return (
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
-          {videoElement}
-        </div>
-      );
-    }
 
     return videoElement;
   }
@@ -2097,23 +2071,6 @@ function CreatorContent({ type, mediaUrl, alignment, field, compact = false, pre
         </div>
       </div>
     );
-
-    if (showTitle && title && preview) {
-      return (
-        <div className="space-y-3">
-          <div
-            className={cn(
-              'text-text-primary leading-snug',
-              labelClass
-            )}
-            style={labelInlineStyle}
-          >
-            {title}
-          </div>
-          {fileElement}
-        </div>
-      );
-    }
 
     return fileElement;
   }

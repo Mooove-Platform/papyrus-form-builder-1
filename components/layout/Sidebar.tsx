@@ -989,7 +989,7 @@ export function Sidebar({
                                     href={`/forms/${form.id}`}
                                     style={{ height: 'clamp(24px, 1.8vw, 28px)', fontSize: 'var(--sidebar-text-sm)' }}
                                     className={cn(
-                                      'flex items-center gap-2 px-3 text-text-secondary hover:text-text-primary rounded hover:bg-bg-elevated transition truncate flex-1',
+                                      'flex items-center gap-2 px-1 text-text-secondary hover:text-text-primary rounded hover:bg-bg-elevated transition truncate flex-1',
                                       pathname === `/forms/${form.id}` && 'text-text-primary font-medium'
                                     )}
                                   >
@@ -1037,8 +1037,8 @@ export function Sidebar({
                           )}
                         </>
                       ) : (
-                        <span className="block px-3 text-sm text-text-tertiary flex items-center" style={{ height: 'clamp(24px, 1.8vw, 28px)' }}>
-                          Aucun formulaire encore
+                        <span className="block px-1 py-1 text-sm text-text-tertiary">
+                          Aucun formulaire
                         </span>
                       )}
 
@@ -1046,7 +1046,7 @@ export function Sidebar({
                       <button
                         onClick={() => handleCreateFormInWorkspace(ws.id)}
                         style={{ height: 'clamp(24px, 1.8vw, 28px)', fontSize: 'var(--sidebar-text-sm)' }}
-                        className="flex items-center gap-2 px-3 text-mooove-cyan hover:bg-papyrus-border/20 rounded-md transition w-full text-left font-medium mt-0"
+                        className="flex items-center gap-2 px-1 text-mooove-cyan hover:bg-papyrus-border/20 rounded-md transition w-full text-left font-medium mt-0"
                       >
                         <Plus
                           style={{ width: 'var(--sidebar-icon)', height: 'var(--sidebar-icon)' }}
@@ -1067,19 +1067,34 @@ export function Sidebar({
         {/* Inline Workspace Creation Input */}
         <div className="pt-1">
           {isCreating ? (
-            <form onSubmit={handleCreateWorkspace} className="px-3 py-1">
+            <form onSubmit={handleCreateWorkspace} className="px-2 py-1 flex items-center gap-1">
               <input
                 type="text"
                 required
                 value={newWorkspaceName}
                 onChange={(e) => setNewWorkspaceName(e.target.value)}
                 placeholder="Nom du workspace..."
-                className="w-full h-8 px-2 text-xs border border-border bg-bg-surface rounded-md focus:border-accent focus:outline-none"
+                className="flex-1 h-8 px-2 text-xs border border-border bg-bg-surface rounded-md focus:border-accent focus:outline-none"
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') setIsCreating(false);
+                  if (e.key === 'Escape') { setIsCreating(false); setNewWorkspaceName(''); }
                 }}
               />
+              <button
+                type="submit"
+                className="p-1 rounded text-green-600 hover:bg-bg-elevated transition shrink-0"
+                aria-label="Confirmer"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsCreating(false); setNewWorkspaceName(''); }}
+                className="p-1 rounded text-text-tertiary hover:bg-bg-elevated hover:text-text-primary transition shrink-0"
+                aria-label="Annuler"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </form>
           ) : (
             <button
