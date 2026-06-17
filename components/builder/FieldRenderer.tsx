@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useRef } from 'react';
-import { Star, Upload, ImageOff, PlayCircle } from 'lucide-react';
+import { Star, Upload, ImageOff, PlayCircle, Calendar } from 'lucide-react';
 import type { Field, FieldOption, SubField } from '@/types';
 import { AutoTextarea } from '@/components/ui/AutoTextarea';
 import { PhoneField as BuilderPhoneField } from './fields/PhoneField';
@@ -204,15 +204,29 @@ export function FieldRenderer({
 
     case 'date':
       return (
-        <input
-          type="date"
-          name={field.id}
-          required={required && !preview}
-          className={cn(baseInput, 'min-w-0 max-w-full')}
-          disabled={preview}
-          value={value || ''}
-          onChange={(e) => onValueChange && onValueChange(e.target.value)}
-        />
+        <div className="relative w-full">
+          <input
+            type="date"
+            name={field.id}
+            required={required && !preview}
+            className={cn(
+              baseInput,
+              'w-full min-w-0 max-w-full box-border pr-10',
+              '[appearance:none] [-webkit-appearance:none]',
+              '[&::-webkit-calendar-picker-indicator]:hidden',
+              !value && 'text-transparent'
+            )}
+            disabled={preview}
+            value={value || ''}
+            onChange={(e) => onValueChange && onValueChange(e.target.value)}
+          />
+          {!value && (
+            <div className="pointer-events-none absolute inset-0 flex items-center px-3">
+              <span className="text-sm text-text-tertiary">jj / mm / aaaa</span>
+            </div>
+          )}
+          <Calendar className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
+        </div>
       );
 
     case 'single_choice':

@@ -36,7 +36,13 @@ export function PhoneField({ placeholder, field, onChange }: PhoneFieldProps) {
             fontSize: '14px'
           }}
         >
-          <span>🇲🇺</span>
+          <img
+            src="https://flagcdn.com/w20/mu.png"
+            width={20}
+            height={15}
+            alt="Maurice"
+            style={{ borderRadius: '2px', flexShrink: 0 }}
+          />
           <span style={{ color: 'var(--text-secondary)' }}>+230</span>
         </div>
 

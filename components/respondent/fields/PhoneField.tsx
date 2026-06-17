@@ -204,7 +204,13 @@ export function PhoneField({ name, required, placeholder, value, onChange }: Pho
             fontSize: '14px'
           }}
         >
-          <span>{selected.flag}</span>
+          <img
+            src={`https://flagcdn.com/w20/${selected.code.toLowerCase()}.png`}
+            width={20}
+            height={15}
+            alt={selected.name}
+            style={{ borderRadius: '2px', flexShrink: 0 }}
+          />
           <span style={{ color: 'var(--text-secondary)' }}>{selected.dial}</span>
           <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>▼</span>
         </button>
@@ -313,7 +319,13 @@ export function PhoneField({ name, required, placeholder, value, onChange }: Pho
                     textAlign: 'left'
                   }}
                 >
-                  <span>{country.flag}</span>
+                  <img
+                    src={`https://flagcdn.com/w20/${country.code.toLowerCase()}.png`}
+                    width={20}
+                    height={15}
+                    alt={country.name}
+                    style={{ borderRadius: '2px', flexShrink: 0 }}
+                  />
                   <span style={{ flex: 1 }}>{country.name}</span>
                   <span style={{ color: 'var(--text-secondary)' }}>{country.dial}</span>
                 </button>
