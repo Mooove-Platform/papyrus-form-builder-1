@@ -229,7 +229,7 @@ export function PhoneField({ name, required, placeholder, value, onChange }: Pho
             padding: '10px 12px',
             border: 'none',
             background: 'transparent',
-            fontSize: '14px',
+            fontSize: '16px',
             outline: 'none',
             color: 'var(--text-primary)',
             ...(errorMessage && { borderColor: 'red' })
@@ -279,7 +279,7 @@ export function PhoneField({ name, required, placeholder, value, onChange }: Pho
                 padding: '8px 10px',
                 border: '1px solid var(--papyrus-border)',
                 borderRadius: '6px',
-                fontSize: '13px',
+                fontSize: '16px',
                 outline: 'none',
                 background: 'var(--bg-base)',
                 color: 'var(--text-primary)'

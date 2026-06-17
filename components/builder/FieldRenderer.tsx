@@ -204,15 +204,14 @@ export function FieldRenderer({
 
     case 'date':
       return (
-        <div className="relative w-full">
+        <div className="relative w-full overflow-hidden">
           <input
             type="date"
             name={field.id}
             required={required && !preview}
             className={cn(
               baseInput,
-              'w-full min-w-0 max-w-full box-border pr-10',
-              '[appearance:none] [-webkit-appearance:none]',
+              'w-full min-w-0 box-border pr-10 appearance-none',
               '[&::-webkit-calendar-picker-indicator]:hidden',
               !value && 'text-transparent'
             )}
