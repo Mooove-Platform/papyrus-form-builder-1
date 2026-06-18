@@ -211,7 +211,7 @@ export function FieldRenderer({
             required={required && !preview}
             className={cn(
               baseInput,
-              'w-full min-w-0 box-border py-3 pr-10 appearance-none',
+              'w-full min-w-0 box-border py-3.5 pr-10 appearance-none',
               '[&::-webkit-calendar-picker-indicator]:hidden',
               !value && 'text-transparent'
             )}
