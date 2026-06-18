@@ -5,6 +5,7 @@ import { Mail, Shield, UserPlus, Users, Trash2, ShieldAlert } from 'lucide-react
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { toast } from '@/components/ui/Toast';
 import { listTeamMembers, addTeamMember, updateTeamMemberRole, deleteTeamMember, updateTeamName } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ export default function SettingsPage() {
   
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'member' | 'reader'>('member');
+  const [removeMemberConfirm, setRemoveMemberConfirm] = useState<{ userId: string; email: string } | null>(null);
 
   // Helper pour lire le cookie actif
   function getActiveTeamId(): string | null {
@@ -143,10 +145,15 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleRemoveMember(userId: string, email: string) {
+  function handleRemoveMember(userId: string, email: string) {
     if (!activeTeam) return;
-    if (!confirm(`Retirer ${email} de l'espace de travail ?`)) return;
+    setRemoveMemberConfirm({ userId, email });
+  }
 
+  async function executeRemoveMember() {
+    if (!activeTeam || !removeMemberConfirm) return;
+    const { userId } = removeMemberConfirm;
+    setRemoveMemberConfirm(null);
     try {
       await deleteTeamMember(activeTeam.id, userId);
       toast.success('Membre retiré avec succès');
@@ -340,6 +347,15 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!removeMemberConfirm}
+        onClose={() => setRemoveMemberConfirm(null)}
+        onConfirm={executeRemoveMember}
+        title="Retirer ce membre ?"
+        message={`${removeMemberConfirm?.email ?? ''} sera retiré de l'espace de travail. Cette action est irréversible.`}
+        confirmLabel="Retirer"
+      />
     </div>
   );
 }

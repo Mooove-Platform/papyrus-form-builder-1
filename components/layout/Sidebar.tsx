@@ -40,6 +40,7 @@ import {
 import type { Workspace, Form, WorkspaceScope } from '@/types';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/components/ui/Toast';
 import { createForm, createTeam, updateTeamName, cloneForm, deleteForm, updateForm } from '@/lib/store';
@@ -102,6 +103,9 @@ export function Sidebar({
   // Modal de confirmation de suppression de membre
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; email: string } | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
+
+  // Suppression formulaire
+  const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
 
   // Menu contextuel formulaire actif
   const [activeFormMenuId, setActiveFormMenuId] = useState<string | null>(null);
@@ -182,21 +186,23 @@ export function Sidebar({
     }
   };
 
-  const handleDeleteFormClick = async (formId: string) => {
-    const f = findFormById(formId);
-    const formTitle = f?.title || 'ce formulaire';
+  const handleDeleteFormClick = (formId: string) => {
+    setDeletingFormId(formId);
+  };
 
-    if (window.confirm(`Êtes-vous sûr de vouloir supprimer définitivement le formulaire « ${formTitle} » ? Cette action est irréversible.`)) {
-      try {
-        await deleteForm(formId);
-        toast.success('Formulaire supprimé !');
-        if (pathname === `/forms/${formId}` || pathname === `/forms/${formId}/edit`) {
-          router.push('/dashboard');
-        }
-      } catch (err) {
-        console.error('Error deleting form:', err);
-        toast.error('Erreur lors de la suppression');
+  const confirmDeleteForm = async () => {
+    if (!deletingFormId) return;
+    const formId = deletingFormId;
+    setDeletingFormId(null);
+    try {
+      await deleteForm(formId);
+      toast.success('Formulaire supprimé !');
+      if (pathname === `/forms/${formId}` || pathname === `/forms/${formId}/edit`) {
+        router.push('/dashboard');
       }
+    } catch (err) {
+      console.error('Error deleting form:', err);
+      toast.error('Erreur lors de la suppression');
     }
   };
 
@@ -1373,6 +1379,19 @@ export function Sidebar({
             </div>
           </div>
         </Modal>,
+        document.body
+      )}
+
+      {/* Dialog de confirmation de suppression de formulaire */}
+      {typeof window !== 'undefined' && createPortal(
+        <ConfirmDialog
+          isOpen={!!deletingFormId}
+          onClose={() => setDeletingFormId(null)}
+          onConfirm={confirmDeleteForm}
+          title="Supprimer ce formulaire ?"
+          message={`« ${findFormById(deletingFormId ?? '') ?.title ?? 'Ce formulaire'} » sera supprimé définitivement. Cette action est irréversible.`}
+          confirmLabel="Supprimer"
+        />,
         document.body
       )}
 

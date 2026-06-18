@@ -43,6 +43,7 @@ export default function BuilderPage() {
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [selectedHeaderElement, setSelectedHeaderElement] = useState<'banner' | 'logo' | null>(null);
   const [titleDraft, setTitleDraft] = useState('');
+  const [descriptionDraft, setDescriptionDraft] = useState('');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   // Indicateur d'état de sauvegarde (Google Forms / Tally style)
@@ -356,7 +357,10 @@ export default function BuilderPage() {
   }, [params.id]);
 
   useEffect(() => {
-    if (form) setTitleDraft(form.title);
+    if (form) {
+      setTitleDraft(form.title);
+      setDescriptionDraft(form.description ?? '');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form?.id]);
 
@@ -393,6 +397,23 @@ export default function BuilderPage() {
       setForm(previousForm);
       setTitleDraft(previousForm.title);
       toast.error('Erreur lors de la modification du titre');
+    }
+  }
+
+  async function handleDescriptionBlur() {
+    if (!form || descriptionDraft === (form.description ?? '')) return;
+
+    const previousForm = form;
+    setForm(prev => prev ? { ...prev, description: descriptionDraft } : prev);
+
+    try {
+      const saved = await updateForm(form.id, { description: descriptionDraft });
+      if (saved) setForm(saved);
+    } catch (error) {
+      console.error('Failed to update description:', error);
+      setForm(previousForm);
+      setDescriptionDraft(previousForm.description ?? '');
+      toast.error('Erreur lors de la modification de la description');
     }
   }
 
@@ -697,6 +718,19 @@ export default function BuilderPage() {
               onSelectLogo={() => selectHeaderElement('logo')}
               onThemeChange={handleThemeChange}
             />
+
+            {/* Description éditable */}
+            <div className="mt-3 mb-4 px-1">
+              <textarea
+                value={descriptionDraft}
+                onChange={(e) => setDescriptionDraft(e.target.value)}
+                onBlur={handleDescriptionBlur}
+                maxLength={LIMITS.FORM_DESCRIPTION_MAX}
+                placeholder="Ajoutez une description (optionnelle)..."
+                rows={2}
+                className="w-full resize-none border-0 bg-transparent font-body text-sm italic text-text-secondary outline-none transition placeholder:text-text-tertiary focus:border-b focus:border-accent"
+              />
+            </div>
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={fields.map((f) => f.id)} strategy={rectSortingStrategy}>

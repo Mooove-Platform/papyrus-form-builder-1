@@ -17,6 +17,18 @@ function emptyMultilingual(value = ''): MultilingualText {
   return { fr: value };
 }
 
+function normalizeMultilingual(val: any): MultilingualText {
+  if (!val) return { fr: '' };
+  if (typeof val === 'string') return { fr: val };
+  if (typeof val === 'object') {
+    return {
+      fr: val.fr || '',
+      ...val
+    };
+  }
+  return { fr: '' };
+}
+
 /** Nettoie les champs obsolètes (banner, logo) qui ont été refactorisés vers FormHeader */
 function cleanObsoleteFields(form: Form): Form {
   if (!form.fields) return form;
@@ -402,7 +414,8 @@ export function importForm(
       optionIdMap[opt.id] = newOptId;
       return {
         ...opt,
-        id: newOptId
+        id: newOptId,
+        label: normalizeMultilingual(opt.label)
       };
     });
     
@@ -411,7 +424,8 @@ export function importForm(
       optionIdMap[row.id] = newRowId;
       return {
         ...row,
-        id: newRowId
+        id: newRowId,
+        label: normalizeMultilingual(row.label)
       };
     }) : undefined;
     
@@ -419,6 +433,11 @@ export function importForm(
       ...field,
       id: newFieldId,
       form_id: newFormId,
+      label: normalizeMultilingual(field.label),
+      description: normalizeMultilingual(field.description),
+      placeholder: normalizeMultilingual(field.placeholder),
+      required: typeof field.required === 'boolean' ? field.required : false,
+      validation: field.validation || {},
       options: mappedOptions,
       rows: mappedRows,
       field_order: index

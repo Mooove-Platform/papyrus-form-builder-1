@@ -15,6 +15,18 @@ function emptyMultilingual(value = ''): MultilingualText {
   return { fr: value };
 }
 
+function normalizeMultilingual(val: any): MultilingualText {
+  if (!val) return { fr: '' };
+  if (typeof val === 'string') return { fr: val };
+  if (typeof val === 'object') {
+    return {
+      fr: val.fr || '',
+      ...val
+    };
+  }
+  return { fr: '' };
+}
+
 function notifyFormsChanged() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('papyrus:forms-changed'));
@@ -889,7 +901,8 @@ export async function importForm(
       optionIdMap[opt.id] = newOptId;
       return {
         ...opt,
-        id: newOptId
+        id: newOptId,
+        label: normalizeMultilingual(opt.label)
       };
     });
     
@@ -898,7 +911,8 @@ export async function importForm(
       optionIdMap[row.id] = newRowId;
       return {
         ...row,
-        id: newRowId
+        id: newRowId,
+        label: normalizeMultilingual(row.label)
       };
     }) : undefined;
     
@@ -906,6 +920,11 @@ export async function importForm(
       ...field,
       id: newFieldId,
       form_id: newFormId,
+      label: normalizeMultilingual(field.label),
+      description: normalizeMultilingual(field.description),
+      placeholder: normalizeMultilingual(field.placeholder),
+      required: typeof field.required === 'boolean' ? field.required : false,
+      validation: field.validation || {},
       options: mappedOptions,
       rows: mappedRows,
       field_order: index
@@ -963,6 +982,8 @@ export async function importForm(
     access_password: formJson.access_password || null,
     languages: formJson.languages || ['fr'],
     default_language: formJson.default_language || 'fr',
+    scoring_enabled: typeof formJson.scoring_enabled === 'boolean' ? formJson.scoring_enabled : false,
+    show_score_to_respondent: typeof formJson.show_score_to_respondent === 'boolean' ? formJson.show_score_to_respondent : false,
     published_at: null,
     closes_at: null,
     created_at: now,

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useForm } from '@/lib/store/use-forms';
 import {
   archiveForm,
@@ -48,6 +49,7 @@ function FormDashboardContent() {
   const [tab, setTab] = useState<Tab>('overview');
   const [menuOpen, setMenuOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Charger le nom du workspace
   useEffect(() => {
@@ -122,16 +124,20 @@ function FormDashboardContent() {
     setMenuOpen(false);
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!form) return;
-    if (confirm(`Supprimer définitivement « ${form.title} » ?`)) {
-      try {
-        await deleteForm(form.id);
-        router.push('/forms');
-      } catch (error) {
-        console.error('Failed to delete form:', error);
-        toast.error('Impossible de supprimer le formulaire. Veuillez réessayer.');
-      }
+    setShowDeleteConfirm(true);
+  }
+
+  async function executeDelete() {
+    if (!form) return;
+    setShowDeleteConfirm(false);
+    try {
+      await deleteForm(form.id);
+      router.push('/forms');
+    } catch (error) {
+      console.error('Failed to delete form:', error);
+      toast.error('Impossible de supprimer le formulaire. Veuillez réessayer.');
     }
   }
 
@@ -190,6 +196,15 @@ function FormDashboardContent() {
       {tab === 'overview' && <OverviewTab form={form} />}
       {tab === 'responses' && <ResponsesTab form={form} />}
       {tab === 'share' && <ShareTab form={form} />}
+
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={executeDelete}
+        title="Supprimer ce formulaire ?"
+        message={`« ${form.title} » sera supprimé définitivement. Cette action est irréversible.`}
+        confirmLabel="Supprimer"
+      />
     </div>
   );
 }
