@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 interface Props {
   style: FieldStyle;
   onChange: (style: FieldStyle) => void;
+  introColor?: string;
+  onIntroColorChange?: (color: string | undefined) => void;
 }
 
 const SIZES: { value: LabelSize; label: string }[] = [
@@ -35,7 +37,7 @@ const PRESET_COLORS = [
 ];
 
 /** Contrôles réutilisables pour FieldStyle. Utilisé en per-field ET en per-form (global). */
-export function StyleControls({ style, onChange }: Props) {
+export function StyleControls({ style, onChange, introColor, onIntroColorChange }: Props) {
   function patch(p: Partial<FieldStyle>) {
     onChange({ ...style, ...p });
   }
@@ -73,6 +75,36 @@ export function StyleControls({ style, onChange }: Props) {
           />
         </div>
       </Section>
+
+      {onIntroColorChange && (
+        <Section title="Couleur de l'intro">
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={introColor ?? '#8B7355'}
+              onChange={(e) => onIntroColorChange(e.target.value)}
+              className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
+              aria-label="Couleur de l'intro"
+            />
+            <Input
+              value={introColor ?? ''}
+              onChange={(e) => onIntroColorChange(e.target.value === '' ? undefined : e.target.value)}
+              placeholder="Par défaut"
+              className="flex-1 font-mono text-xs"
+            />
+            {introColor && (
+              <button
+                type="button"
+                onClick={() => onIntroColorChange(undefined)}
+                className="shrink-0 text-text-tertiary hover:text-danger transition"
+                aria-label="Réinitialiser"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </Section>
+      )}
 
       <Section title="Police">
         <div className="grid grid-cols-3 gap-1">

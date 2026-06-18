@@ -728,7 +728,8 @@ export default function BuilderPage() {
                 maxLength={LIMITS.FORM_DESCRIPTION_MAX}
                 placeholder="Ajoutez une description (optionnelle)..."
                 rows={2}
-                className="w-full resize-none border-0 bg-transparent font-body text-sm italic text-text-secondary outline-none transition placeholder:text-text-tertiary focus:border-b focus:border-accent"
+                className="w-full resize-none border-0 bg-transparent font-body text-sm italic outline-none transition placeholder:text-text-tertiary focus:border-b focus:border-accent"
+                style={{ color: form.theme.text_color ?? 'var(--text-secondary)' }}
               />
             </div>
 

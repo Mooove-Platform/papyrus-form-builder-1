@@ -26,7 +26,7 @@ interface Props {
   onModeChange: (mode: DisplayMode) => void;
 }
 
-type Tab = 'background' | 'style' | 'colors' | 'settings';
+type Tab = 'background' | 'style' | 'settings';
 
 export function FormDesignPanel({ form, onChange, onFormChange, onModeChange }: Props) {
   const [tab, setTab] = useState<Tab>('background');
@@ -102,9 +102,6 @@ export function FormDesignPanel({ form, onChange, onFormChange, onModeChange }: 
         <TabButton active={tab === 'style'} onClick={() => setTab('style')}>
           Style
         </TabButton>
-        <TabButton active={tab === 'colors'} onClick={() => setTab('colors')}>
-          Accent
-        </TabButton>
         <TabButton active={tab === 'settings'} onClick={() => setTab('settings')}>
           Réglages
         </TabButton>
@@ -113,7 +110,6 @@ export function FormDesignPanel({ form, onChange, onFormChange, onModeChange }: 
       <div className="flex-1 pt-5">
         {tab === 'background' && <BackgroundTab theme={form.theme} onChange={onChange} />}
         {tab === 'style' && <FormStyleTab theme={form.theme} onChange={onChange} />}
-        {tab === 'colors' && <AccentTab theme={form.theme} onChange={onChange} />}
         {tab === 'settings' && <SettingsTab form={form} onFormChange={onFormChange} />}
       </div>
     </div>
@@ -746,7 +742,12 @@ function FormStyleTab({
         le surcharger champ par champ via l&apos;onglet « Style » d&apos;un champ sélectionné.
       </div>
 
-      <StyleControls style={current} onChange={handleChange} />
+      <StyleControls
+        style={current}
+        onChange={handleChange}
+        introColor={theme.text_color}
+        onIntroColorChange={(c) => onChange({ text_color: c })}
+      />
 
       {hasStyle && (
         <button
@@ -757,72 +758,12 @@ function FormStyleTab({
           Réinitialiser le style global
         </button>
       )}
-    </div>
-  );
-}
 
-// ============================================================================
-// Accent tab — restreint à l'identité Mooove
-// ============================================================================
-
-const MOOOVE_ACCENTS = [
-  { value: '#052139', name: 'Navy', description: 'Identité principale Mooove' },
-  { value: '#3C5EAB', name: 'Electric Blue', description: 'Audace, affirmation' },
-  { value: '#2AC2DE', name: 'Cyan', description: 'Énergie, mouvement (CTA)' }
-];
-
-const PRESET_ACCENTS = [
-  '#052139', // Navy
-  '#3C5EAB', // Electric Blue
-  '#2AC2DE', // Cyan
-  '#F6923E', // Amber
-  '#C0392B', // Coral
-  '#10B981', // Emerald
-  '#8B5CF6', // Purple
-  '#EC4899'  // Pink
-];
-
-function AccentTab({ theme, onChange }: { theme: FormTheme; onChange: (patch: Partial<FormTheme>) => void }) {
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-text-tertiary">
-        Couleur d&apos;identité Mooove pour les boutons et les éléments actifs. Choisissez l&apos;un de nos presets
-        ou configurez votre propre couleur personnalisée.
-      </p>
-      <div className="space-y-2">
-        {MOOOVE_ACCENTS.map((c) => {
-          const active = theme.accent === c.value;
-          return (
-            <button
-              key={c.value}
-              type="button"
-              onClick={() => onChange({ accent: c.value })}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left transition',
-                active ? 'border-accent bg-accent/5' : 'border-border-strong hover:border-accent'
-              )}
-            >
-              <span
-                className="h-5 w-5 shrink-0 rounded border border-border"
-                style={{ backgroundColor: c.value }}
-              />
-              <span className="flex-1">
-                <span className="block text-sm font-medium text-text-primary">{c.name}</span>
-                <span className="block text-[11px] text-text-tertiary">{c.description}</span>
-              </span>
-              <span className="font-mono text-[10px] text-text-tertiary">{c.value}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Couleur personnalisée */}
-      <div className="border-t border-dashed border-border pt-4 mt-4">
-        <label className="block text-xs font-semibold uppercase tracking-wider text-text-secondary mb-2">
-          Couleur personnalisée
+      {/* Couleur des boutons */}
+      <div className="border-t border-dashed border-border pt-5 space-y-2">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-text-secondary">
+          Couleur des boutons
         </label>
-        
-        {/* Palette rapide */}
         <div className="grid grid-cols-8 gap-0.5 mb-2">
           {PRESET_ACCENTS.map((c) => {
             const active = theme.accent === c;
@@ -832,7 +773,7 @@ function AccentTab({ theme, onChange }: { theme: FormTheme; onChange: (patch: Pa
                 type="button"
                 onClick={() => onChange({ accent: c })}
                 className={cn(
-                  'h-4 w-4 rounded border transition',
+                  'h-5 w-5 rounded border transition',
                   active ? 'ring-1 ring-accent ring-offset-1 ring-offset-bg-surface' : 'border-border'
                 )}
                 style={{ backgroundColor: c }}
@@ -841,14 +782,13 @@ function AccentTab({ theme, onChange }: { theme: FormTheme; onChange: (patch: Pa
             );
           })}
         </div>
-
         <div className="flex items-center gap-2">
           <input
             type="color"
             value={theme.accent ?? '#052139'}
             onChange={(e) => onChange({ accent: e.target.value })}
             className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
-            aria-label="Sélecteur de couleur d'accent"
+            aria-label="Couleur des boutons"
           />
           <Input
             value={theme.accent ?? ''}
@@ -861,3 +801,15 @@ function AccentTab({ theme, onChange }: { theme: FormTheme; onChange: (patch: Pa
     </div>
   );
 }
+
+const PRESET_ACCENTS = [
+  '#052139', // Navy
+  '#3C5EAB', // Electric Blue
+  '#2AC2DE', // Cyan
+  '#F6923E', // Amber
+  '#C0392B', // Coral
+  '#10B981', // Emerald
+  '#8B5CF6', // Purple
+  '#EC4899'  // Pink
+];
+

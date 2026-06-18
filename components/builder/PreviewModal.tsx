@@ -266,7 +266,14 @@ function PreviewHeader({ form }: { form: Form }) {
       />
       <header className="mb-8">
         <h1 className="font-display text-4xl text-text-primary">{form.title}</h1>
-        {form.description && <p className="papyrus-meta mt-2 text-base">{form.description}</p>}
+        {form.description && (
+          <p
+            className="papyrus-meta mt-2 text-base"
+            style={{ color: form.theme.text_color ?? 'var(--text-secondary)' }}
+          >
+            {form.description}
+          </p>
+        )}
       </header>
     </>
   );
@@ -874,7 +881,12 @@ function TypeformPreview({
               <div className="mb-6">
                 <h1 className="font-display text-3xl text-text-primary">{form.title}</h1>
                 {form.description && (
-                  <p className="papyrus-meta mt-2 text-base">{form.description}</p>
+                  <p
+                    className="papyrus-meta mt-2 text-base"
+                    style={{ color: form.theme.text_color ?? 'var(--text-secondary)' }}
+                  >
+                    {form.description}
+                  </p>
                 )}
                 <div className="papyrus-divider mt-4" />
               </div>
