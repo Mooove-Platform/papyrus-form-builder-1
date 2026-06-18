@@ -50,6 +50,7 @@
 
   /* Sidebar — tailles fluides proportionnelles à l'écran */
   --sidebar-width: clamp(200px, 15vw, 280px);
+  --sidebar-collapsed-width: clamp(52px, 4vw, 64px);
   --sidebar-icon: clamp(14px, 1.1vw, 18px);
   --sidebar-text-sm: clamp(11px, 0.85vw, 13px);
   --sidebar-text-base: clamp(12px, 0.9vw, 14px);

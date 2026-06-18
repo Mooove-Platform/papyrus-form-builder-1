@@ -790,7 +790,7 @@ export function Sidebar({
 
   return (
     <aside
-      style={{ width: isCollapsed ? 'var(--sidebar-avatar-size)' : 'var(--sidebar-width)' }}
+      style={{ width: isCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)' }}
       className={cn(
         "flex h-full flex-col border-r border-border bg-bg-surface select-none transition-all duration-200 overflow-hidden"
       )}
