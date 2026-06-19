@@ -90,7 +90,7 @@ function calculateFieldScore(field: Field, response: any): { score: number; maxS
       return calculateRatingScore(field, response);
 
     case 'nps':
-      return calculateNpsScore(response);
+      return calculateNpsScore(field, response);
 
     default:
       return null;
@@ -189,17 +189,19 @@ function calculateRatingScore(field: Field, response: number): { score: number; 
 }
 
 /**
- * Score pour NPS : mapping 0-10 vers points.
- * Par défaut : 0 = 0 point, 10 = 10 points.
+ * Score pour NPS : mapping min-max vers points.
  */
-function calculateNpsScore(response: number): { score: number; maxScore: number } {
+function calculateNpsScore(field: Field, response: number): { score: number; maxScore: number } {
+  const min = field.validation?.min ?? 0;
+  const max = field.validation?.max ?? 10;
+
   if (typeof response !== 'number') {
-    return { score: 0, maxScore: 10 };
+    return { score: 0, maxScore: max };
   }
 
-  // Clamp entre 0 et 10
-  const nps = Math.max(0, Math.min(10, response));
-  return { score: nps, maxScore: 10 };
+  // Clamp entre min et max
+  const nps = Math.max(min, Math.min(max, response));
+  return { score: nps, maxScore: max };
 }
 
 export const DEFAULT_SCORE_LEVELS: ScoreLevel[] = [

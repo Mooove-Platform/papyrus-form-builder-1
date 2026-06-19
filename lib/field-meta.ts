@@ -41,7 +41,7 @@ export const FIELD_META: Record<FieldType, FieldMeta> = {
   multiple_choice: { type: 'multiple_choice', label: 'Choix multiple', icon: CheckSquare, description: 'Plusieurs options', hasOptions: true, hasPlaceholder: false },
   dropdown: { type: 'dropdown', label: 'Liste déroulante', icon: ChevronDown, description: 'Menu déroulant', hasOptions: true, hasPlaceholder: false },
   rating: { type: 'rating', label: 'Note', icon: Star, description: 'Étoiles 1 à 5', hasOptions: false, hasPlaceholder: false },
-  nps: { type: 'nps', label: 'NPS', icon: Smile, description: 'Score 0-10', hasOptions: false, hasPlaceholder: false },
+  nps: { type: 'nps', label: 'Échelle de notation', icon: Smile, description: 'Boutons ou slider', hasOptions: false, hasPlaceholder: false },
   date: { type: 'date', label: 'Date', icon: Calendar, description: 'Sélecteur de date', hasOptions: false, hasPlaceholder: false },
   file: { type: 'file', label: 'Fichier', icon: FileUp, description: 'Upload de fichier', hasOptions: false, hasPlaceholder: false },
   section_break: { type: 'section_break', label: 'Section', icon: Minus, description: 'Séparateur', hasOptions: false, hasPlaceholder: false },

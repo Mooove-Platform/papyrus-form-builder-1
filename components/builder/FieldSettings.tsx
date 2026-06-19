@@ -462,6 +462,89 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
         </Section>
       )}
 
+      {field.type === 'nps' && (
+        <>
+          <Section title="Échelle">
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="number"
+                label="Valeur minimale"
+                value={field.validation?.min !== undefined ? field.validation.min : 0}
+                onChange={(e) =>
+                  patchValidation({
+                    min: e.target.value === '' ? 0 : Number(e.target.value)
+                  })
+                }
+                placeholder="0"
+              />
+              <Input
+                type="number"
+                label="Valeur maximale"
+                value={field.validation?.max !== undefined ? field.validation.max : 10}
+                onChange={(e) =>
+                  patchValidation({
+                    max: e.target.value === '' ? 10 : Number(e.target.value)
+                  })
+                }
+                placeholder="10"
+              />
+            </div>
+            <p className="text-[11px] text-text-tertiary">
+              Par défaut 0 et 10. Les bornes définissent l&apos;échelle de notation.
+            </p>
+          </Section>
+
+          <Section title="Libellés des extrémités">
+            <div className="space-y-3">
+              <Input
+                type="text"
+                label="Libellé gauche (min)"
+                value={field.validation?.nps_left_label !== undefined ? field.validation.nps_left_label : ''}
+                onChange={(e) => patchValidation({ nps_left_label: e.target.value })}
+                placeholder="Pas du tout probable"
+                maxLength={100}
+              />
+              <Input
+                type="text"
+                label="Libellé droite (max)"
+                value={field.validation?.nps_right_label !== undefined ? field.validation.nps_right_label : ''}
+                onChange={(e) => patchValidation({ nps_right_label: e.target.value })}
+                placeholder="Extrêmement probable"
+                maxLength={100}
+              />
+            </div>
+            <p className="text-[11px] text-text-tertiary">
+              Laisser vide pour utiliser les valeurs par défaut.
+            </p>
+          </Section>
+
+          <Section title="Style d'affichage">
+            <label className="block text-xs text-text-secondary">Disposition</label>
+            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+              {([
+                { value: 'buttons', label: 'Boutons' },
+                { value: 'slider', label: 'Slider' }
+              ] as const).map((style) => {
+                const active = (field.validation?.display_style ?? 'buttons') === style.value;
+                return (
+                  <button
+                    key={style.value}
+                    type="button"
+                    onClick={() => patchValidation({ display_style: style.value })}
+                    className={`rounded-md border px-2 py-2 text-xs transition ${active
+                        ? 'border-accent bg-accent/5 text-text-primary'
+                        : 'border-border-strong text-text-secondary hover:border-accent'
+                      }`}
+                  >
+                    {style.label}
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+        </>
+      )}
+
       {field.type === 'number' && (
         <Section title="Validation">
           <div className="grid grid-cols-2 gap-2">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Upload, X } from 'lucide-react';
 import type { FormTheme } from '@/types';
 import { Input } from '@/components/ui/Input';
@@ -17,6 +17,27 @@ interface Props {
 
 export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [localBannerScale, setLocalBannerScale] = useState(theme.banner_scale ?? 1);
+  const [localBannerX, setLocalBannerX] = useState(theme.banner_position_x ?? 50);
+  const [localBannerY, setLocalBannerY] = useState(theme.banner_position_y ?? 50);
+  const [localLogoSize, setLocalLogoSize] = useState(theme.logo_size ?? 1);
+
+  useEffect(() => {
+    setLocalBannerScale(theme.banner_scale ?? 1);
+  }, [theme.banner_scale]);
+
+  useEffect(() => {
+    setLocalBannerX(theme.banner_position_x ?? 50);
+  }, [theme.banner_position_x]);
+
+  useEffect(() => {
+    setLocalBannerY(theme.banner_position_y ?? 50);
+  }, [theme.banner_position_y]);
+
+  useEffect(() => {
+    setLocalLogoSize(theme.logo_size ?? 1);
+  }, [theme.logo_size]);
 
   function handleImageUpload(file: File) {
     if (file.size > MAX_IMAGE_BYTES) {
@@ -142,15 +163,18 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
                   <div>
                     <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
                       <span>Zoom</span>
-                      <span className="font-mono text-text-tertiary">{Math.round((theme.banner_scale ?? 1) * 100)}%</span>
+                      <span className="font-mono text-text-tertiary">{Math.round(localBannerScale * 100)}%</span>
                     </label>
                     <input
                       type="range"
                       min={0.05}
                       max={3}
                       step={0.05}
-                      value={theme.banner_scale ?? 1}
-                      onChange={(e) => onChange({ banner_scale: Number(e.target.value) })}
+                      value={localBannerScale}
+                      onChange={(e) => setLocalBannerScale(Number(e.target.value))}
+                      onMouseUp={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
+                      onTouchEnd={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
+                      onKeyUp={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
                       className="w-full accent-accent"
                     />
                   </div>
@@ -158,28 +182,34 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
                   <div>
                     <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
                       <span>Position horizontale</span>
-                      <span className="font-mono text-text-tertiary">{theme.banner_position_x ?? 50}%</span>
+                      <span className="font-mono text-text-tertiary">{localBannerX}%</span>
                     </label>
                     <input
                       type="range"
                       min={0}
                       max={100}
-                      value={theme.banner_position_x ?? 50}
-                      onChange={(e) => onChange({ banner_position_x: Number(e.target.value) })}
+                      value={localBannerX}
+                      onChange={(e) => setLocalBannerX(Number(e.target.value))}
+                      onMouseUp={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
+                      onTouchEnd={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
+                      onKeyUp={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
                       className="w-full accent-accent"
                     />
                   </div>
                   <div>
                     <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
                       <span>Position verticale</span>
-                      <span className="font-mono text-text-tertiary">{theme.banner_position_y ?? 50}%</span>
+                      <span className="font-mono text-text-tertiary">{localBannerY}%</span>
                     </label>
                     <input
                       type="range"
                       min={0}
                       max={100}
-                      value={theme.banner_position_y ?? 50}
-                      onChange={(e) => onChange({ banner_position_y: Number(e.target.value) })}
+                      value={localBannerY}
+                      onChange={(e) => setLocalBannerY(Number(e.target.value))}
+                      onMouseUp={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
+                      onTouchEnd={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
+                      onKeyUp={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
                       className="w-full accent-accent"
                     />
                   </div>
@@ -303,15 +333,18 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
               <div>
                 <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
                   <span>Zoom</span>
-                  <span className="font-mono text-text-tertiary">{Math.round((theme.logo_size ?? 1) * 100)}%</span>
+                  <span className="font-mono text-text-tertiary">{Math.round(localLogoSize * 100)}%</span>
                 </label>
                 <input
                   type="range"
                   min={0.5}
                   max={3}
                   step={0.1}
-                  value={theme.logo_size ?? 1}
-                  onChange={(e) => onChange({ logo_size: Number(e.target.value) })}
+                  value={localLogoSize}
+                  onChange={(e) => setLocalLogoSize(Number(e.target.value))}
+                  onMouseUp={(e) => onChange({ logo_size: Number(e.currentTarget.value) })}
+                  onTouchEnd={(e) => onChange({ logo_size: Number(e.currentTarget.value) })}
+                  onKeyUp={(e) => onChange({ logo_size: Number(e.currentTarget.value) })}
                   className="w-full accent-accent"
                 />
               </div>

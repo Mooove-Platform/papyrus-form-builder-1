@@ -65,7 +65,7 @@ function getFieldTypeLabel(type: string): string {
     multiple_choice: 'Choix multiple',
     dropdown: 'Liste déroulante',
     rating: 'Évaluation',
-    nps: 'Score NPS',
+    nps: 'Échelle de notation',
     date: 'Date',
     file: 'Fichier / Média',
     matrix: 'Matrice',

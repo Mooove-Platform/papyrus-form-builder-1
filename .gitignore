@@ -44,3 +44,6 @@ Thumbs.db
 
 # AI tools / Local IDE settings
 .claude/
+
+# Supabase temp files
+supabase/.temp/

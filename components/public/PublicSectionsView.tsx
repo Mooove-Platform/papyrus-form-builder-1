@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Form, Field } from '@/types';
 import type { ScoreResult } from '@/lib/scoring';
 import { FormHeader } from '@/components/builder/FormHeader';
@@ -36,6 +36,10 @@ export function PublicSectionsView({
   const fields = form.fields?.filter(f => visibleFields.has(f.id)) || [];
   const pages = buildPages(fields);
   const [pageIdx, setPageIdx] = useState(0);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [pageIdx]);
 
   const total = pages.length;
   const currentPage = pages[pageIdx] ?? [];

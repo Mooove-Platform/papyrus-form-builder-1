@@ -1,6 +1,6 @@
 'use client';
 
-import { Component, useMemo, useState, useEffect, Suspense, type ReactNode } from 'react';
+import { Component, useMemo, useState, useEffect, Suspense, type ReactNode, type RefObject } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -42,21 +42,11 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/components/ui/Toast';
 import { ClosingDateModal } from '@/components/dashboard/ClosingDateModal';
 
-// Drag & Drop imports for dashboard overview
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  arrayMove,
-  rectSortingStrategy
-} from '@dnd-kit/sortable';
-import { SortableChartWidget } from '@/components/dashboard/ChartWidget';
+import { GridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
+import type { Layout, LayoutItem } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import { ChartWidget } from '@/components/dashboard/ChartWidget';
+import type { ChartLayoutItem } from '@/types';
 import {
   ResponsiveContainer,
   BarChart,
@@ -605,6 +595,125 @@ function getOrderedChartFields(fields: Field[], chartOrder?: string[], deletedCh
 }
 
 // ============================================================================
+// Construit le layout initial pour react-grid-layout.
+// Si chart_layout est déjà stocké, on l'utilise.
+// Sinon on génère des positions à partir de orderedFields (qui respecte déjà chart_order).
+// ============================================================================
+function buildInitialLayout(
+  orderedFields: Field[],
+  storedLayout: ChartLayoutItem[] | undefined
+): LayoutItem[] {
+  if (storedLayout && storedLayout.length > 0) {
+    return orderedFields.map((field, index) => {
+      const stored = storedLayout.find(item => item.field_id === field.id);
+      if (stored) return { i: field.id, x: stored.x, y: stored.y, w: stored.w, h: stored.h };
+      // Nouveau champ pas encore dans le layout — on l'ajoute en bas
+      return { i: field.id, x: index % 2, y: Infinity, w: 1, h: 4 };
+    });
+  }
+  // Pas de layout stocké — on génère depuis l'ordre actuel (respecte chart_order via orderedFields)
+  return orderedFields.map((field, index) => ({
+    i: field.id,
+    x: index % 2,
+    y: Math.floor(index / 2) * 4,
+    w: 1,
+    h: 4,
+  }));
+}
+
+// ============================================================================
+// Générateur HTML standalone — export du formulaire
+// ============================================================================
+function generateFormHTML(form: Form): string {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const t = (ml: { fr: string; en?: string } | undefined) =>
+    ml ? (ml.fr || ml.en || '') : '';
+
+  const renderField = (field: Field): string => {
+    const label = esc(t(field.label));
+    const desc = t(field.description);
+    const placeholder = esc(t(field.placeholder));
+    const req = field.required ? '<span class="req">*</span>' : '';
+
+    switch (field.type) {
+      case 'short_text':
+      case 'email':
+      case 'phone':
+      case 'url':
+      case 'number':
+        return `<div class="field"><label>${label}${req}</label>${desc ? `<p class="desc">${esc(desc)}</p>` : ''}<input type="${field.type === 'short_text' ? 'text' : field.type}" placeholder="${placeholder}"></div>`;
+      case 'long_text':
+        return `<div class="field"><label>${label}${req}</label>${desc ? `<p class="desc">${esc(desc)}</p>` : ''}<textarea rows="4" placeholder="${placeholder}"></textarea></div>`;
+      case 'date':
+        return `<div class="field"><label>${label}${req}</label>${desc ? `<p class="desc">${esc(desc)}</p>` : ''}<input type="date"></div>`;
+      case 'single_choice':
+        return `<div class="field"><label>${label}${req}</label>${desc ? `<p class="desc">${esc(desc)}</p>` : ''}${(field.options || []).map(o => `<label class="choice"><input type="radio" name="${esc(field.id)}"><span>${esc(t(o.label))}</span></label>`).join('')}</div>`;
+      case 'multiple_choice':
+        return `<div class="field"><label>${label}${req}</label>${desc ? `<p class="desc">${esc(desc)}</p>` : ''}${(field.options || []).map(o => `<label class="choice"><input type="checkbox"><span>${esc(t(o.label))}</span></label>`).join('')}</div>`;
+      case 'dropdown':
+        return `<div class="field"><label>${label}${req}</label>${desc ? `<p class="desc">${esc(desc)}</p>` : ''}<select><option value="">— Choisir —</option>${(field.options || []).map(o => `<option>${esc(t(o.label))}</option>`).join('')}</select></div>`;
+      case 'rating':
+        return `<div class="field"><label>${label}${req}</label>${desc ? `<p class="desc">${esc(desc)}</p>` : ''}<div class="rating">☆ ☆ ☆ ☆ ☆</div></div>`;
+      case 'nps':
+        return `<div class="field"><label>${label}${req}</label>${desc ? `<p class="desc">${esc(desc)}</p>` : ''}<div class="nps">${Array.from({ length: 11 }, (_, i) => `<span>${i}</span>`).join('')}</div></div>`;
+      case 'section_break':
+        return `<div class="section-break"><hr><h3>${label}</h3></div>`;
+      case 'statement':
+        return `<p class="statement">${label}</p>`;
+      default:
+        return '';
+    }
+  };
+
+  const sortedFields = [...(form.fields || [])].sort((a, b) => a.field_order - b.field_order);
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${esc(form.title)}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F7F0DC;color:#1a1a1a;min-height:100vh;display:flex;justify-content:center;padding:40px 16px}
+    .wrap{background:#FFFDF5;border-radius:16px;padding:48px;max-width:680px;width:100%;border:1px solid #D4B896}
+    h1{font-size:2rem;font-weight:700;margin-bottom:8px}
+    .form-desc{color:#666;margin-bottom:40px;line-height:1.6}
+    .field{margin-bottom:28px}
+    label{display:block;font-weight:600;font-size:.95rem;margin-bottom:8px}
+    .req{color:#e05;margin-left:3px}
+    .desc{font-size:.83rem;color:#777;margin-bottom:8px;font-weight:400}
+    input[type=text],input[type=email],input[type=tel],input[type=url],input[type=number],input[type=date],textarea,select{width:100%;padding:10px 14px;border:1.5px solid #D4B896;border-radius:8px;font-size:.95rem;background:#fff;font-family:inherit}
+    textarea{resize:vertical}
+    .choice{display:flex;align-items:center;gap:8px;font-weight:400;margin-top:6px;cursor:pointer}
+    .choice input{width:auto;margin:0}
+    .rating{font-size:1.8rem;letter-spacing:4px;color:#F6923E;margin-top:4px}
+    .nps{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .nps span{width:38px;height:38px;border:1.5px solid #D4B896;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.9rem;cursor:pointer}
+    .section-break{margin:32px 0 20px}
+    .section-break hr{border:none;border-top:1.5px solid #D4B896;margin-bottom:16px}
+    .section-break h3{font-size:1.1rem;font-weight:700}
+    .statement{color:#555;line-height:1.6;margin-bottom:8px}
+    button[type=submit]{margin-top:32px;background:#052139;color:#fff;border:none;padding:14px 32px;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer;font-family:inherit}
+    button[type=submit]:hover{background:#0a3a5c}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>${esc(form.title)}</h1>
+    ${form.description ? `<p class="form-desc">${esc(form.description)}</p>` : ''}
+    <form>
+      ${sortedFields.map(renderField).join('\n      ')}
+      <button type="submit">Envoyer</button>
+    </form>
+  </div>
+</body>
+</html>`;
+}
+
+// ============================================================================
 // ErrorBoundary par widget — isole les crashs de rendu de chaque graphique
 // ============================================================================
 interface ChartErrorBoundaryProps {
@@ -660,7 +769,12 @@ function OverviewTab({ form, submissions, loading }: OverviewTabProps) {
   const [localForm, setLocalForm] = useState<Form>(form);
 
   useEffect(() => {
-    if (form) setLocalForm(form);
+    if (!form) return;
+    setLocalForm(prev => {
+      if (prev.id !== form.id) return form;
+      if (prev.updated_at === form.updated_at) return prev;
+      return form;
+    });
   }, [form]);
 
   const dashboardConfig = localForm.theme.dashboard_config ?? {};
@@ -754,8 +868,52 @@ function OverviewTab({ form, submissions, loading }: OverviewTabProps) {
     return getOrderedChartFields(localForm.fields ?? [], chartOrder, deletedCharts);
   }, [localForm.fields, chartOrder, deletedCharts]);
 
-  // Capteur pointer avec un seuil de déplacement pour éviter de déclencher le drag sur un simple clic
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  // Mesure dynamique de la largeur du conteneur pour react-grid-layout v2
+  const { width: gridContainerWidth, containerRef: gridContainerRef, mounted: gridMounted } = useContainerWidth();
+
+  // Layout react-grid-layout — initialisé depuis chart_layout ou dérivé de chart_order
+  const [gridLayout, setGridLayout] = useState<LayoutItem[]>(() =>
+    buildInitialLayout(orderedFields, dashboardConfig.chart_layout)
+  );
+
+  // Sync quand des champs sont ajoutés ou supprimés (preserve les positions existantes)
+  useEffect(() => {
+    setGridLayout((prev: LayoutItem[]) => {
+      const next: LayoutItem[] = orderedFields.map((field, index) => {
+        const existing = prev.find((l: LayoutItem) => l.i === field.id);
+        return existing ?? { i: field.id, x: index % 2, y: Infinity, w: 1, h: 4 };
+      });
+      const sameSet =
+        next.length === prev.length && next.every((l: LayoutItem, i: number) => l.i === prev[i]?.i);
+      return sameSet ? prev : next;
+    });
+  }, [orderedFields]);
+
+  // Persiste le layout après fin d'un drag ou d'un resize (EventCallback reçoit Layout = readonly LayoutItem[])
+  const handleSaveLayout = async (newLayout: Layout): Promise<void> => {
+    const chartLayout: ChartLayoutItem[] = [...newLayout].map((item: LayoutItem) => ({
+      field_id: item.i,
+      x: item.x,
+      y: item.y,
+      w: item.w,
+      h: item.h,
+    }));
+
+    const config = localForm.theme.dashboard_config ?? {};
+    const updatedTheme = {
+      ...localForm.theme,
+      dashboard_config: { ...config, chart_layout: chartLayout },
+    };
+
+    setLocalForm(prev => ({ ...prev, theme: updatedTheme }));
+
+    try {
+      await updateForm(localForm.id, { theme: updatedTheme });
+    } catch (error) {
+      console.error('Failed to save chart layout:', error);
+      toast.error('Erreur lors de la sauvegarde du layout');
+    }
+  };
 
   // Callback de changement de titre
   const handleTitleChange = async (fieldId: string, newTitle: string) => {
@@ -801,6 +959,23 @@ function OverviewTab({ form, submissions, loading }: OverviewTabProps) {
   };
 
   // Callback de changement du type de rendu pour une matrice (heatmap ou barres)
+  function handleExportPDF() {
+    window.print();
+  }
+
+  function handleExportHTML() {
+    const html = generateFormHTML(localForm);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${localForm.slug || localForm.id}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   const handleMatrixTypeChange = async (fieldId: string, type: 'heatmap' | 'bar') => {
     const config = localForm.theme.dashboard_config ?? {};
     const matrixTypes = { ...(config.chart_matrix_types ?? {}), [fieldId]: type };
@@ -815,34 +990,6 @@ function OverviewTab({ form, submissions, loading }: OverviewTabProps) {
       await updateForm(localForm.id, { theme: updatedTheme });
     } catch (error) {
       console.error('Failed to update matrix rendering:', error);
-      setLocalForm(form);
-    }
-  };
-
-  // Gestion de la fin du Drag & Drop
-  const handleDragEnd = async (e: DragEndEvent) => {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-
-    const oldIdx = orderedFields.findIndex(f => f.id === active.id);
-    const newIdx = orderedFields.findIndex(f => f.id === over.id);
-    if (oldIdx === -1 || newIdx === -1) return;
-
-    const reordered = arrayMove(orderedFields, oldIdx, newIdx);
-    const nextOrder = reordered.map(f => f.id);
-
-    const config = localForm.theme.dashboard_config ?? {};
-    const updatedTheme = {
-      ...localForm.theme,
-      dashboard_config: { ...config, chart_order: nextOrder }
-    };
-
-    setLocalForm(prev => ({ ...prev, theme: updatedTheme }));
-
-    try {
-      await updateForm(localForm.id, { theme: updatedTheme });
-    } catch (error) {
-      console.error('Failed to update chart order:', error);
       setLocalForm(form);
     }
   };
@@ -965,33 +1112,55 @@ function OverviewTab({ form, submissions, loading }: OverviewTabProps) {
             ({submissions.length} répondant{submissions.length > 1 ? 's' : ''})
           </span>
         </h2>
+        <div className="flex items-center gap-1.5 print:hidden">
+          <Button variant="ghost" onClick={handleExportHTML} className="h-8 gap-1.5 px-3 text-xs text-text-tertiary hover:text-text-primary">
+            <Download className="h-3.5 w-3.5" />
+            HTML
+          </Button>
+          <Button variant="ghost" onClick={handleExportPDF} className="h-8 gap-1.5 px-3 text-xs text-text-tertiary hover:text-text-primary">
+            <Download className="h-3.5 w-3.5" />
+            PDF
+          </Button>
+        </div>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={orderedFields.map(f => f.id)} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+      <div ref={gridContainerRef as RefObject<HTMLDivElement>}>
+        {gridMounted && (
+          <GridLayout
+            width={gridContainerWidth}
+            layout={gridLayout}
+            gridConfig={{ cols: 2, rowHeight: 80, margin: [24, 24] as readonly [number, number] }}
+            dragConfig={{ handle: '.chart-drag-handle', threshold: 6 }}
+            resizeConfig={{ handles: ['se'] as const }}
+            compactor={verticalCompactor}
+            onLayoutChange={(newLayout: Layout) => setGridLayout([...newLayout])}
+            onDragStop={handleSaveLayout}
+            onResizeStop={handleSaveLayout}
+          >
             {orderedFields.map((field) => {
               const fieldTitle = chartTitles[field.id] || field.label.fr || 'Question sans titre';
               const matrixType = chartMatrixTypes[field.id] || 'heatmap';
 
               return (
-                <ChartErrorBoundary key={field.id} fieldLabel={fieldTitle}>
-                  <SortableChartWidget
-                    field={field}
-                    submissions={submissions}
-                    title={fieldTitle}
-                    theme={localForm.theme}
-                    matrixType={matrixType}
-                    onTitleChange={(title) => handleTitleChange(field.id, title)}
-                    onDelete={() => handleDeleteWidget(field.id)}
-                    onMatrixTypeChange={(type) => handleMatrixTypeChange(field.id, type)}
-                  />
-                </ChartErrorBoundary>
+                <div key={field.id} className="chart-widget-grid-item">
+                  <ChartErrorBoundary fieldLabel={fieldTitle}>
+                    <ChartWidget
+                      field={field}
+                      submissions={submissions}
+                      title={fieldTitle}
+                      theme={localForm.theme}
+                      matrixType={matrixType}
+                      onTitleChange={(newTitle: string) => handleTitleChange(field.id, newTitle)}
+                      onDelete={() => handleDeleteWidget(field.id)}
+                      onMatrixTypeChange={(type: 'heatmap' | 'bar') => handleMatrixTypeChange(field.id, type)}
+                    />
+                  </ChartErrorBoundary>
+                </div>
               );
             })}
-          </div>
-        </SortableContext>
-      </DndContext>
+          </GridLayout>
+        )}
+      </div>
     </div>
   );
 }
@@ -1062,6 +1231,7 @@ function ResponsesTab({ form, submissions, setSubmissions, loading }: ResponsesT
       setSubmissions((prev) => prev.filter((s) => s.id !== subId));
       toast.success('Réponse supprimée');
     } else {
+      console.error('Failed to delete submission:', error);
       toast.error('Erreur lors de la suppression');
     }
     setConfirmDeleteId(null);
@@ -1102,6 +1272,7 @@ function ResponsesTab({ form, submissions, setSubmissions, loading }: ResponsesT
       );
       setEditedCells((prev) => new Set([...prev, `${subId}:${fieldId}`]));
     } else {
+      console.error('Failed to update submission:', error);
       toast.error('Erreur lors de la modification');
     }
     setEditingCell(null);

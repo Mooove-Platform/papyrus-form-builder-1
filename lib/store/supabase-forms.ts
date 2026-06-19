@@ -373,7 +373,6 @@ export async function updateForm(id: string, patch: Partial<Form>): Promise<Form
   };
 
   notifyFormUpdated(id, updatedForm);
-  notifyFormsChanged();
   return updatedForm;
 }
 

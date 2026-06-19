@@ -86,7 +86,11 @@ function getFieldScoreInfo(field: Field): { minPoints: number; maxPoints: number
       return { minPoints: 1, maxPoints: 5, hasScoring: true };
 
     case 'nps':
-      return { minPoints: 0, maxPoints: 10, hasScoring: true };
+      return {
+        minPoints: field.validation?.min ?? 0,
+        maxPoints: field.validation?.max ?? 10,
+        hasScoring: true
+      };
 
     default:
       return { minPoints: 0, maxPoints: 0, hasScoring: false };

@@ -17,10 +17,11 @@ import { toast } from '@/components/ui/Toast';
 import type { Form, FormStatus, Workspace } from '@/types';
 import { ClosingDateModal } from '@/components/dashboard/ClosingDateModal';
 
-type OwnerFilter = 'mine' | 'shared';
+type OwnerFilterValue = 'mine' | 'shared';
+type OwnerFilter = OwnerFilterValue | null;
 type StatusFilter = 'all' | FormStatus;
 
-const OWNER_FILTERS: { value: OwnerFilter; label: string; icon: React.ComponentType<{ className?: string }>; hint: string }[] = [
+const OWNER_FILTERS: { value: OwnerFilterValue; label: string; icon: React.ComponentType<{ className?: string }>; hint: string }[] = [
   { value: 'mine', label: 'Mes formulaires', icon: User, hint: 'Ceux que vous avez créés' },
   { value: 'shared', label: 'Partagés', icon: Users, hint: 'Ceux de votre équipe' }
 ];
@@ -136,7 +137,7 @@ export default function FormsListPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchParams = useSearchParams();
   const workspaceIdFromUrl = searchParams.get('workspace');
-  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('mine');
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string>(CURRENT_USER_ID);
@@ -254,6 +255,18 @@ export default function FormsListPage() {
     }
   }, []);
 
+  // Détecter si l'espace courant est personnel (pas de formulaires partagés possibles)
+  const isPersonalWorkspace = useMemo(() => {
+    if (!workspaceIdFromUrl) return false;
+    const ws = workspaces.find((w) => w.id === workspaceIdFromUrl);
+    return ws?.scope === 'personal';
+  }, [workspaceIdFromUrl, workspaces]);
+
+  // Réinitialiser le filtre propriétaire quand on change d'espace
+  useEffect(() => {
+    setOwnerFilter(null);
+  }, [workspaceIdFromUrl]);
+
   // On exclut les templates de la liste des formulaires, et on filtre par workspace si spécifié.
   const userForms = useMemo(() => {
     let list = allForms.filter((f) => !f.is_template);
@@ -277,9 +290,11 @@ export default function FormsListPage() {
   // Forms restreints au filtre propriétaire — utilisé pour les compteurs de statut + filtrage final
   const ownedForms = useMemo(
     () =>
-      userForms.filter((f) =>
-        ownerFilter === 'mine' ? f.created_by === currentUserId : f.created_by !== currentUserId
-      ),
+      ownerFilter === null
+        ? userForms
+        : userForms.filter((f) =>
+            ownerFilter === 'mine' ? f.created_by === currentUserId : f.created_by !== currentUserId
+          ),
     [userForms, ownerFilter, currentUserId]
   );
 
@@ -724,37 +739,39 @@ export default function FormsListPage() {
       {/* Filtres + recherche */}
       <div className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Filtre propriétaire — en pill (segmented) */}
-          <div className="flex gap-1 rounded-md border border-border bg-bg-surface p-0.5">
-            {OWNER_FILTERS.map(({ value, label, icon: Icon }) => {
-              const active = ownerFilter === value;
-              const count = ownerCounts[value];
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setOwnerFilter(value)}
-                  className={cn(
-                    'inline-flex items-center gap-2 rounded px-3 py-1.5 text-sm transition',
-                    active
-                      ? 'bg-bg-elevated text-text-primary'
-                      : 'text-text-secondary hover:text-text-primary'
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {label}
-                  <span
+          {/* Filtre propriétaire — masqué dans les espaces personnels */}
+          {!isPersonalWorkspace && (
+            <div className="flex gap-1 rounded-md border border-border bg-bg-surface p-0.5">
+              {OWNER_FILTERS.map(({ value, label, icon: Icon }) => {
+                const active = ownerFilter === value;
+                const count = ownerCounts[value];
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setOwnerFilter(active ? null : value)}
                     className={cn(
-                      'rounded-full px-1.5 py-0.5 text-[10px]',
-                      active ? 'bg-accent/10 text-accent' : 'bg-bg-elevated text-text-tertiary'
+                      'inline-flex items-center gap-2 rounded px-3 py-1.5 text-sm transition',
+                      active
+                        ? 'bg-bg-elevated text-text-primary'
+                        : 'text-text-secondary hover:text-text-primary'
                     )}
                   >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                    <span
+                      className={cn(
+                        'rounded-full px-1.5 py-0.5 text-[10px]',
+                        active ? 'bg-accent/10 text-accent' : 'bg-bg-elevated text-text-tertiary'
+                      )}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <SearchBar value={search} onChange={setSearch} placeholder="Rechercher un formulaire…" />
         </div>
@@ -788,9 +805,11 @@ export default function FormsListPage() {
         </div>
       </div>
 
-      <p className="papyrus-meta -mt-3 text-xs">
-        i. {OWNER_FILTERS.find((f) => f.value === ownerFilter)?.hint}
-      </p>
+      {ownerFilter !== null && (
+        <p className="papyrus-meta -mt-3 text-xs">
+          i. {OWNER_FILTERS.find((f) => f.value === ownerFilter)?.hint}
+        </p>
+      )}
 
       {/* Contenu */}
       {filtered.length === 0 ? (
@@ -1529,7 +1548,7 @@ function EmptyState({
         <SquareSlash className="mx-auto h-8 w-8 text-text-tertiary" />
         <h3 className="mt-3 font-display text-lg">Aucun formulaire en {statusLabel}</h3>
         <p className="papyrus-meta mt-1 text-sm">
-          i. Rien à afficher avec ce filtre dans {ownerFilter === 'mine' ? 'vos formulaires' : 'les partagés'}.
+          i. Rien à afficher avec ce filtre{ownerFilter === 'mine' ? ' dans vos formulaires' : ownerFilter === 'shared' ? ' dans les partagés' : ''}.
         </p>
         <button
           type="button"

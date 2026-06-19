@@ -104,11 +104,13 @@ export interface FieldValidation {
   has_other?: boolean; // pour les champs à choix : ajoute une option "Autre" avec texte libre
   other_label?: string; // libellé de l'option "Autre" (par défaut : "Autre")
   options_columns?: 1 | 2 | 3; // nombre de colonnes pour disposer les options
-  display_style?: 'cards' | 'buttons'; // pour 'single_choice' — cartes (défaut) ou boutons pleins
+  display_style?: 'cards' | 'buttons' | 'slider'; // pour 'single_choice' ou 'nps'
   has_subfields?: boolean; // pour 'multiple_choice' — active les sous-questions appliquées à chaque option cochée
   randomize_options?: boolean; // pour les champs à choix — mélange l'ordre des options côté répondant
   selection_min?: number; // pour 'multiple_choice' — nombre minimum de cases à cocher
   selection_max?: number; // pour 'multiple_choice' — nombre maximum de cases à cocher
+  nps_left_label?: string; // Libellé gauche (min) pour l'échelle de notation
+  nps_right_label?: string; // Libellé droite (max) pour l'échelle de notation
 }
 
 /** Familles disponibles dans le sélecteur de police par champ.
@@ -224,11 +226,20 @@ export interface FormTheme {
   dashboard_config?: DashboardConfig;
 }
 
+export interface ChartLayoutItem {
+  field_id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface DashboardConfig {
   chart_order?: string[];
   chart_titles?: Record<string, string>;
   deleted_charts?: string[];
   chart_matrix_types?: Record<string, 'heatmap' | 'bar'>;
+  chart_layout?: ChartLayoutItem[];
 }
 
 export interface ScoreLevel {

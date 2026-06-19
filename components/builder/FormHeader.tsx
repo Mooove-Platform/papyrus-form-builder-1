@@ -92,6 +92,29 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
   const outerRef = useRef<HTMLDivElement>(null);       // div externe — pour positionner les poignées
   const containerRef = useRef<HTMLDivElement>(null);   // div interne — pour les calculs de drag pan
 
+  // Local states to handle drag fluidly without triggering parent DB save on every pixel
+  const [localPosX, setLocalPosX] = useState(theme.banner_position_x ?? 50);
+  const [localPosY, setLocalPosY] = useState(theme.banner_position_y ?? 50);
+  const [localScale, setLocalScale] = useState(theme.banner_scale ?? 1);
+
+  const dragPositionRef = useRef({ x: theme.banner_position_x ?? 50, y: theme.banner_position_y ?? 50 });
+  const dragScaleRef = useRef(theme.banner_scale ?? 1);
+
+  useEffect(() => {
+    setLocalPosX(theme.banner_position_x ?? 50);
+    dragPositionRef.current.x = theme.banner_position_x ?? 50;
+  }, [theme.banner_position_x]);
+
+  useEffect(() => {
+    setLocalPosY(theme.banner_position_y ?? 50);
+    dragPositionRef.current.y = theme.banner_position_y ?? 50;
+  }, [theme.banner_position_y]);
+
+  useEffect(() => {
+    setLocalScale(theme.banner_scale ?? 1);
+    dragScaleRef.current = theme.banner_scale ?? 1;
+  }, [theme.banner_scale]);
+
   // State pour stocker les dimensions natives de l'image
   const [natSize, setNatSize] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
 
@@ -131,9 +154,9 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
     }
   }, [theme.banner_url, onThemeChange]);
 
-  const scale = theme.banner_scale ?? 1;
-  const posXpct = theme.banner_position_x ?? 50;
-  const posYpct = theme.banner_position_y ?? 50;
+  const scale = localScale;
+  const posXpct = localPosX;
+  const posYpct = localPosY;
 
   const aspectRatio = natSize.w / natSize.h;
   const imgW = containerW * scale;
@@ -222,6 +245,8 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
     const sy = e.clientY;
     const ox = imgX;
     const oy = imgY;
+    
+    dragPositionRef.current = { x: localPosX, y: localPosY };
 
     const onMove = (ev: MouseEvent) => {
       const newX = ox + (ev.clientX - sx);
@@ -232,15 +257,24 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
       const newPosX = Math.round(((newX + imgW / 2) / containerW) * 100);
       const newPosY = Math.round(((newY + imgH / 2) / containerH) * 100);
 
-      onThemeChange({
-        banner_position_x: Math.min(100, Math.max(0, newPosX)),
-        banner_position_y: Math.min(100, Math.max(0, newPosY)),
-      });
+      const finalPosX = Math.min(100, Math.max(0, newPosX));
+      const finalPosY = Math.min(100, Math.max(0, newPosY));
+
+      dragPositionRef.current = { x: finalPosX, y: finalPosY };
+      setLocalPosX(finalPosX);
+      setLocalPosY(finalPosY);
     };
 
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+
+      if (onThemeChange) {
+        onThemeChange({
+          banner_position_x: dragPositionRef.current.x,
+          banner_position_y: dragPositionRef.current.y,
+        });
+      }
     };
 
     window.addEventListener('mousemove', onMove);
@@ -257,6 +291,8 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
     const sx = e.clientX;
     const sy = e.clientY;
     const snap = { x: imgX, y: imgY, w: imgW, h: imgH };
+    
+    dragScaleRef.current = localScale;
 
     const onMove = (ev: MouseEvent) => {
       const dx = ev.clientX - sx;
@@ -279,14 +315,21 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
 
       // Conversion taille → scale avant onThemeChange
       const newScale = Math.round((w / containerW) * 100) / 100;  // arrondi 2 décimales
-      onThemeChange({
-        banner_scale: Math.min(3, Math.max(0.05, newScale))
-      });
+      const finalScale = Math.min(3, Math.max(0.05, newScale));
+      
+      dragScaleRef.current = finalScale;
+      setLocalScale(finalScale);
     };
 
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+
+      if (onThemeChange) {
+        onThemeChange({
+          banner_scale: dragScaleRef.current
+        });
+      }
     };
 
     window.addEventListener('mousemove', onMove);

@@ -80,20 +80,16 @@ function FormBreadcrumbSegments({
 
   return (
     <>
-      {/* Workspace segment */}
+      {/* Workspace segment — always a link, the user is never "on" the workspace page here */}
       {workspaceName && (
         <span className="flex items-center gap-1.5 min-w-0">
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
-          {hasMore ? (
-            <Link
-              href={workspaceId ? `/workspaces/${workspaceId}` : '/forms'}
-              className="text-text-secondary hover:text-text-primary transition-colors max-w-[140px] truncate"
-            >
-              {workspaceName}
-            </Link>
-          ) : (
-            <span className="text-text-primary max-w-[140px] truncate">{workspaceName}</span>
-          )}
+          <Link
+            href={workspaceId ? `/forms?workspace=${workspaceId}` : '/forms'}
+            className="text-text-secondary hover:text-text-primary transition-colors max-w-[140px] truncate"
+          >
+            {workspaceName}
+          </Link>
         </span>
       )}
 

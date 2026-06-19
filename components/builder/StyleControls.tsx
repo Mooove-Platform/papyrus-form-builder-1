@@ -4,6 +4,7 @@ import { AlignCenter, AlignLeft, AlignRight, Bold, Italic } from 'lucide-react';
 import type { FieldStyle, FontFamily, LabelSize, LabelWeight, TextAlign } from '@/types';
 import { Input } from '@/components/ui/Input';
 import { cn } from '@/lib/utils';
+import { DebouncedColorInput } from '@/components/ui/DebouncedColorInput';
 
 interface Props {
   style: FieldStyle;
@@ -61,10 +62,9 @@ export function StyleControls({ style, onChange, introColor, onIntroColorChange 
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="color"
+          <DebouncedColorInput
             value={style.label_color ?? '#052139'}
-            onChange={(e) => patch({ label_color: e.target.value })}
+            onChange={(val) => patch({ label_color: val })}
             className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
           />
           <Input
@@ -79,10 +79,9 @@ export function StyleControls({ style, onChange, introColor, onIntroColorChange 
       {onIntroColorChange && (
         <Section title="Couleur de l'intro">
           <div className="flex items-center gap-2">
-            <input
-              type="color"
+            <DebouncedColorInput
               value={introColor ?? '#8B7355'}
-              onChange={(e) => onIntroColorChange(e.target.value)}
+              onChange={(val) => onIntroColorChange(val)}
               className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
               aria-label="Couleur de l'intro"
             />

@@ -279,6 +279,7 @@ export function FieldRenderer({
     case 'nps':
       return (
         <NpsScale
+          field={field}
           preview={preview}
           value={value}
           onChange={onValueChange}
@@ -1045,43 +1046,90 @@ function Rating({
 }
 
 function NpsScale({
+  field,
   preview,
   value,
   onChange
 }: {
+  field?: Field;
   preview: boolean;
   value?: number | null;
   onChange?: (val: number) => void;
 }) {
   const [localValue, setLocalValue] = useState<number | null>(null);
   const currentValue = value !== undefined ? value : localValue;
+
+  const min = field?.validation?.min ?? 0;
+  const max = field?.validation?.max ?? 10;
+  const leftLabel = field?.validation?.nps_left_label || "Pas du tout probable";
+  const rightLabel = field?.validation?.nps_right_label || "Extrêmement probable";
+  const displayStyle = field?.validation?.display_style ?? 'buttons';
+
   const handleValueChange = (val: number) => {
     if (onChange) onChange(val);
     else setLocalValue(val);
   };
 
-  return (
-    <div className="space-y-2">
+  const values = Array.from({ length: Math.max(1, max - min + 1) }).map((_, i) => min + i);
+
+  const renderContent = () => {
+    if (displayStyle === 'slider') {
+      const hasValue = currentValue !== null && currentValue !== undefined;
+
+      return (
+        <div className="scale-slider-wrapper flex items-center gap-3 w-full py-1">
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={1}
+            disabled={preview}
+            value={hasValue ? currentValue : Math.round((min + max) / 2)}
+            onChange={(e) => handleValueChange(Number(e.target.value))}
+            className={cn(
+              "scale-slider flex-grow flex-1 appearance-none h-1 bg-border-strong rounded-lg cursor-pointer outline-none transition-all",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2",
+              "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--accent)] [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-110 [&::-webkit-slider-thumb]:active:scale-125 [&::-webkit-slider-thumb]:shadow-sm",
+              "[&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-[var(--accent)] [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:transition-transform [&::-moz-range-thumb]:hover:scale-110 [&::-moz-range-thumb]:active:scale-125 [&::-moz-range-thumb]:shadow-sm"
+            )}
+          />
+          <span className="scale-slider-value text-sm font-semibold text-accent font-mono min-w-[28px] text-right shrink-0 select-none">
+            {hasValue ? currentValue : '—'}
+          </span>
+        </div>
+      );
+    }
+
+    // Default buttons
+    return (
       <div className="flex flex-wrap gap-1.5">
-        {Array.from({ length: 11 }).map((_, i) => (
+        {values.map((val) => (
           <button
-            key={i}
+            key={val}
             type="button"
             disabled={preview}
-            onClick={() => handleValueChange(i)}
-            className={`h-9 w-9 rounded-md border text-sm transition disabled:cursor-default ${
-              currentValue === i && !preview
-                ? 'border-accent bg-accent text-mooove-ice'
-                : 'border-border-strong bg-bg-base text-text-primary'
-            } ${!preview && 'hover:border-accent'}`}
+            onClick={() => handleValueChange(val)}
+            className={cn(
+              "h-9 w-9 rounded-md border text-sm font-medium transition disabled:cursor-default",
+              currentValue === val && !preview
+                ? "border-accent bg-accent text-mooove-ice"
+                : "border-border-strong bg-bg-base text-text-primary",
+              !preview && "hover:border-accent"
+            )}
           >
-            {i}
+            {val}
           </button>
         ))}
       </div>
-      <div className="flex justify-between px-1 text-xs text-text-tertiary">
-        <span>Pas du tout probable</span>
-        <span>Extrêmement probable</span>
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      {renderContent()}
+      <div className="scale-slider-labels flex justify-between px-1 text-xs text-text-tertiary select-none">
+        <span>{leftLabel}</span>
+        <span>{rightLabel}</span>
       </div>
     </div>
   );

@@ -62,6 +62,11 @@ export default function BuilderPage() {
     abortController: null
   });
 
+  // Refs to prevent race conditions on asynchronous requests
+  const lastThemeRequestTimeRef = useRef<number>(0);
+  const lastFormRequestTimeRef = useRef<number>(0);
+  const lastModeRequestTimeRef = useRef<number>(0);
+
   // Autosave global avec protection anti-race condition
   const triggerAutosave = useCallback((updatedForm: Form) => {
     setSaveStatus('unsaved');
@@ -504,6 +509,9 @@ export default function BuilderPage() {
   async function handleThemeChange(patch: Partial<FormTheme>) {
     if (!form) return;
 
+    const requestTime = Date.now();
+    lastThemeRequestTimeRef.current = requestTime;
+
     const previousForm = form;
     let updatedFields = form.fields;
 
@@ -522,22 +530,39 @@ export default function BuilderPage() {
       ...(patch.fields_icons_enabled === true ? { fields: updatedFields } : {})
     };
 
+    // Synchronize pending queue data to avoid overwriting theme updates
+    const queue = autosaveQueueRef.current;
+    if (queue.pendingData) {
+      queue.pendingData = {
+        ...queue.pendingData,
+        theme: { ...queue.pendingData.theme, ...patch },
+        ...(patch.fields_icons_enabled === true ? { fields: updatedFields } : {})
+      };
+    }
+
     // Update optimiste immédiat
     setForm(prev => prev ? { ...prev, ...updateData } : prev);
 
     // Sauvegarde en arrière-plan
     try {
       const saved = await updateForm(form.id, updateData);
-      if (saved) setForm(saved);
+      if (saved && lastThemeRequestTimeRef.current === requestTime) {
+        setForm(saved);
+      }
     } catch (error) {
-      console.error('Failed to update theme:', error);
-      setForm(previousForm);
-      toast.error('Erreur lors de la modification du thème');
+      if (lastThemeRequestTimeRef.current === requestTime) {
+        console.error('Failed to update theme:', error);
+        setForm(previousForm);
+        toast.error('Erreur lors de la modification du thème');
+      }
     }
   }
 
   async function handleFormChange(patch: Partial<Form>) {
     if (!form) return;
+
+    const requestTime = Date.now();
+    lastFormRequestTimeRef.current = requestTime;
 
     const previousForm = form;
     let updatedFields = patch.fields ?? form.fields;
@@ -553,24 +578,49 @@ export default function BuilderPage() {
       patch = { ...patch, fields: updatedFields };
     }
 
+    // Synchronize pending queue data to avoid overwriting form updates
+    const queue = autosaveQueueRef.current;
+    if (queue.pendingData) {
+      queue.pendingData = {
+        ...queue.pendingData,
+        ...patch
+      };
+    }
+
     // Update optimiste immédiat
     setForm(prev => prev ? { ...prev, ...patch } : prev);
 
     // Sauvegarde en arrière-plan
     try {
       const saved = await updateForm(form.id, patch);
-      if (saved) setForm(saved);
+      if (saved && lastFormRequestTimeRef.current === requestTime) {
+        setForm(saved);
+      }
     } catch (error) {
-      console.error('Failed to update form:', error);
-      setForm(previousForm);
-      toast.error('Erreur lors de la modification');
+      if (lastFormRequestTimeRef.current === requestTime) {
+        console.error('Failed to update form:', error);
+        setForm(previousForm);
+        toast.error('Erreur lors de la modification');
+      }
     }
   }
 
   async function handleModeChange(display_mode: import('@/types').DisplayMode) {
     if (!form) return;
 
+    const requestTime = Date.now();
+    lastModeRequestTimeRef.current = requestTime;
+
     const previousForm = form;
+
+    // Synchronize pending queue data to avoid overwriting display mode updates
+    const queue = autosaveQueueRef.current;
+    if (queue.pendingData) {
+      queue.pendingData = {
+        ...queue.pendingData,
+        display_mode
+      };
+    }
 
     // Update optimiste immédiat
     setForm(prev => prev ? { ...prev, display_mode } : prev);
@@ -578,11 +628,15 @@ export default function BuilderPage() {
     // Sauvegarde en arrière-plan
     try {
       const saved = await updateForm(form.id, { display_mode });
-      if (saved) setForm(saved);
+      if (saved && lastModeRequestTimeRef.current === requestTime) {
+        setForm(saved);
+      }
     } catch (error) {
-      console.error('Failed to update display mode:', error);
-      setForm(previousForm);
-      toast.error('Erreur lors du changement de mode');
+      if (lastModeRequestTimeRef.current === requestTime) {
+        console.error('Failed to update display mode:', error);
+        setForm(previousForm);
+        toast.error('Erreur lors du changement de mode');
+      }
     }
   }
 

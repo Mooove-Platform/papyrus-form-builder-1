@@ -538,6 +538,15 @@ function SectionsPreview({
   const fields = (form.fields ?? []).filter(f => visibleFields.has(f.id));
   const pages = buildPages(fields);
   const [pageIdx, setPageIdx] = useState(0);
+
+  const formRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (formRef.current) {
+      formRef.current.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }
+  }, [pageIdx]);
+
   const total = pages.length;
   const currentPage = pages[pageIdx] ?? [];
   const progress = total > 0 ? ((pageIdx + 1) / total) * 100 : 0;
@@ -559,6 +568,7 @@ function SectionsPreview({
 
   return (
     <form
+      ref={formRef}
       key={pageIdx}
       onSubmit={handleSubmit}
       className={cn('mx-auto py-10 transition-all', device === 'mobile' ? 'max-w-sm px-4' : 'max-w-2xl px-8')}
@@ -713,6 +723,14 @@ function TypeformPreview({
   const [idx, setIdx] = useState(0);
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const [history, setHistory] = useState<string[]>([]);
+
+  const formRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (formRef.current) {
+      formRef.current.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }
+  }, [idx]);
   const total = screens.length;
   const current = screens[idx];
   const isLast = idx === total - 1;
@@ -858,6 +876,7 @@ function TypeformPreview({
       <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
         <AnimatePresence mode="wait" custom={direction}>
           <motion.form
+            ref={formRef}
             key={current.id}
             onSubmit={handleSubmit}
             custom={direction}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Image as ImageIcon, Layers, Palette, Sparkles, Upload, X, Plus, Trash2 } from 'lucide-react';
 import type {
   BackgroundType,
@@ -16,6 +16,7 @@ import { BACKGROUND_PRESETS } from '@/lib/theme';
 import { DEFAULT_SCORE_LEVELS } from '@/lib/scoring';
 import { cn } from '@/lib/utils';
 import { StyleControls } from './StyleControls';
+import { DebouncedColorInput } from '@/components/ui/DebouncedColorInput';
 
 const MAX_IMAGE_BYTES = 1.5 * 1024 * 1024;
 
@@ -430,6 +431,17 @@ function BackgroundTab({ theme, onChange }: { theme: FormTheme; onChange: (patch
   const type: BackgroundType = theme.bg_type ?? 'color';
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [localGradientAngle, setLocalGradientAngle] = useState(theme.bg_gradient_angle ?? 135);
+  const [localImageOpacity, setLocalImageOpacity] = useState(theme.bg_image_opacity ?? 0);
+
+  useEffect(() => {
+    setLocalGradientAngle(theme.bg_gradient_angle ?? 135);
+  }, [theme.bg_gradient_angle]);
+
+  useEffect(() => {
+    setLocalImageOpacity(theme.bg_image_opacity ?? 0);
+  }, [theme.bg_image_opacity]);
+
   function handleImageUpload(file: File) {
     if (file.size > MAX_IMAGE_BYTES) {
       alert(`Image trop lourde (${Math.round(file.size / 1024)} Ko). En mode local, max 1,5 Mo.`);
@@ -508,10 +520,9 @@ function BackgroundTab({ theme, onChange }: { theme: FormTheme; onChange: (patch
       {type === 'color' && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <input
-              type="color"
+            <DebouncedColorInput
               value={theme.bg_color ?? theme.bg ?? '#F7F0DC'}
-              onChange={(e) => onChange({ bg_color: e.target.value, bg: e.target.value })}
+              onChange={(val) => onChange({ bg_color: val, bg: val })}
               className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
             />
             <Input
@@ -530,10 +541,9 @@ function BackgroundTab({ theme, onChange }: { theme: FormTheme; onChange: (patch
           <div>
             <label className="mb-1 block text-xs text-text-secondary">Couleur 1</label>
             <div className="flex items-center gap-2">
-              <input
-                type="color"
+              <DebouncedColorInput
                 value={theme.bg_gradient_from ?? '#F7F0DC'}
-                onChange={(e) => onChange({ bg_gradient_from: e.target.value })}
+                onChange={(val) => onChange({ bg_gradient_from: val })}
                 className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
               />
               <Input
@@ -547,10 +557,9 @@ function BackgroundTab({ theme, onChange }: { theme: FormTheme; onChange: (patch
           <div>
             <label className="mb-1 block text-xs text-text-secondary">Couleur 2</label>
             <div className="flex items-center gap-2">
-              <input
-                type="color"
+              <DebouncedColorInput
                 value={theme.bg_gradient_to ?? '#EFF9FE'}
-                onChange={(e) => onChange({ bg_gradient_to: e.target.value })}
+                onChange={(val) => onChange({ bg_gradient_to: val })}
                 className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
               />
               <Input
@@ -564,14 +573,17 @@ function BackgroundTab({ theme, onChange }: { theme: FormTheme; onChange: (patch
           <div>
             <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
               <span>Angle</span>
-              <span className="font-mono text-text-tertiary">{theme.bg_gradient_angle ?? 135}°</span>
+              <span className="font-mono text-text-tertiary">{localGradientAngle}°</span>
             </label>
             <input
               type="range"
               min={0}
               max={360}
-              value={theme.bg_gradient_angle ?? 135}
-              onChange={(e) => onChange({ bg_gradient_angle: Number(e.target.value) })}
+              value={localGradientAngle}
+              onChange={(e) => setLocalGradientAngle(Number(e.target.value))}
+              onMouseUp={(e) => onChange({ bg_gradient_angle: Number(e.currentTarget.value) })}
+              onTouchEnd={(e) => onChange({ bg_gradient_angle: Number(e.currentTarget.value) })}
+              onKeyUp={(e) => onChange({ bg_gradient_angle: Number(e.currentTarget.value) })}
               className="w-full accent-mooove-navy"
             />
           </div>
@@ -640,14 +652,17 @@ function BackgroundTab({ theme, onChange }: { theme: FormTheme; onChange: (patch
           <div>
             <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
               <span>Voile parchemin (lisibilité)</span>
-              <span className="font-mono text-text-tertiary">{theme.bg_image_opacity ?? 0}%</span>
+              <span className="font-mono text-text-tertiary">{localImageOpacity}%</span>
             </label>
             <input
               type="range"
               min={0}
               max={90}
-              value={theme.bg_image_opacity ?? 0}
-              onChange={(e) => onChange({ bg_image_opacity: Number(e.target.value) })}
+              value={localImageOpacity}
+              onChange={(e) => setLocalImageOpacity(Number(e.target.value))}
+              onMouseUp={(e) => onChange({ bg_image_opacity: Number(e.currentTarget.value) })}
+              onTouchEnd={(e) => onChange({ bg_image_opacity: Number(e.currentTarget.value) })}
+              onKeyUp={(e) => onChange({ bg_image_opacity: Number(e.currentTarget.value) })}
               className="w-full accent-mooove-navy"
             />
             <p className="mt-1 text-[10px] text-text-tertiary">
@@ -698,10 +713,9 @@ function BackgroundTab({ theme, onChange }: { theme: FormTheme; onChange: (patch
         </div>
 
         <div className="mt-3 flex items-center gap-2">
-          <input
-            type="color"
+          <DebouncedColorInput
             value={theme.field_bg_color ?? '#FFFDF5'}
-            onChange={(e) => onChange({ field_bg_color: e.target.value })}
+            onChange={(val) => onChange({ field_bg_color: val })}
             className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
           />
           <Input
@@ -783,10 +797,9 @@ function FormStyleTab({
           })}
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="color"
+          <DebouncedColorInput
             value={theme.accent ?? '#052139'}
-            onChange={(e) => onChange({ accent: e.target.value })}
+            onChange={(val) => onChange({ accent: val })}
             className="h-9 w-12 cursor-pointer rounded border border-border-strong bg-bg-base"
             aria-label="Couleur des boutons"
           />

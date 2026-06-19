@@ -37,6 +37,11 @@ export function PublicTypeformView({
 }: Props) {
   const fields = form.fields?.filter(f => visibleFields.has(f.id)) || [];
   const [currentIdx, setCurrentIdx] = useState(0);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [currentIdx]);
+
   const [showIntro, setShowIntro] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
 

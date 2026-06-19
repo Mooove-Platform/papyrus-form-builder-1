@@ -1,8 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import {
   Trash2,
   GripVertical,
@@ -40,29 +38,6 @@ interface ChartWidgetProps {
   onMatrixTypeChange: (type: 'heatmap' | 'bar') => void;
 }
 
-export function SortableChartWidget(props: ChartWidgetProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: props.field.id
-  });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 50 : undefined,
-    resize: props.isExportMode ? 'none' : 'vertical',
-    overflow: 'hidden',
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className={cn('min-w-0 min-h-[300px]', isDragging && 'opacity-60')}>
-      <ChartWidget
-        {...props}
-        dragHandleProps={props.isExportMode ? undefined : { ...attributes, ...listeners }}
-        isDragging={isDragging}
-      />
-    </div>
-  );
-}
 
 const PIE_COLORS = [
   '#052139',
@@ -86,9 +61,7 @@ export function ChartWidget({
   theme,
   matrixType = 'heatmap',
   onMatrixTypeChange,
-  dragHandleProps,
-  isDragging
-}: ChartWidgetProps & { dragHandleProps?: any; isDragging?: boolean }) {
+}: ChartWidgetProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(title);
   const [showAutresModal, setShowAutresModal] = useState(false);
@@ -193,8 +166,8 @@ export function ChartWidget({
       case 'rating':
       case 'nps': {
         const counts: Record<number, number> = {};
-        const maxVal = field.type === 'nps' ? 10 : (field.validation?.max ?? 5);
-        const minVal = field.type === 'nps' ? 0 : 1;
+        const maxVal = field.type === 'nps' ? (field.validation?.max ?? 10) : (field.validation?.max ?? 5);
+        const minVal = field.type === 'nps' ? (field.validation?.min ?? 0) : 1;
 
         for (let i = minVal; i <= maxVal; i++) {
           counts[i] = 0;
@@ -315,6 +288,60 @@ export function ChartWidget({
       }
     });
     return count > 0 ? (sum / count).toFixed(1) : null;
+  }, [field, submissions]);
+
+  // Calcul NPS (promoteurs/passifs/détracteurs) si 0-10
+  const npsData = useMemo(() => {
+    if (field.type !== 'nps') return null;
+    const min = field.validation?.min ?? 0;
+    const max = field.validation?.max ?? 10;
+
+    if (min !== 0 || max !== 10) return null;
+
+    let promoters = 0;
+    let passives = 0;
+    let detractors = 0;
+    let total = 0;
+
+    submissions.forEach(sub => {
+      const val = sub.responses?.[field.id];
+      const num = Number(val);
+      if (val !== undefined && val !== null && val !== '' && !isNaN(num)) {
+        total++;
+        if (num >= 9) promoters++;
+        else if (num >= 7) passives++;
+        else detractors++;
+      }
+    });
+
+    if (total === 0) {
+      return {
+        promoters: 0,
+        passives: 0,
+        detractors: 0,
+        total: 0,
+        npsScore: 0,
+        pctPromoters: 0,
+        pctPassives: 0,
+        pctDetractors: 0
+      };
+    }
+
+    const pctPromoters = (promoters / total) * 100;
+    const pctPassives = (passives / total) * 100;
+    const pctDetractors = (detractors / total) * 100;
+    const npsScore = Math.round(pctPromoters - pctDetractors);
+
+    return {
+      promoters,
+      passives,
+      detractors,
+      total,
+      npsScore,
+      pctPromoters,
+      pctPassives,
+      pctDetractors
+    };
   }, [field, submissions]);
 
   // Sauvegarde du titre modifié
@@ -688,17 +715,16 @@ export function ChartWidget({
       className={cn(
         'group/widget relative rounded-lg border p-5 transition flex flex-col justify-between h-full min-h-[300px] overflow-hidden',
         theme.field_bg_color ? '' : 'bg-bg-surface',
-        isDragging ? 'border-accent shadow-xl scale-[1.01]' : 'border-border hover:border-border-strong',
+        'border-border hover:border-border-strong',
       )}
     >
       {/* Header du Widget */}
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex flex-1 items-center gap-1.5 min-w-0">
-          {!isExportMode && dragHandleProps && (
+          {!isExportMode && (
             <button
               type="button"
-              {...dragHandleProps}
-              className="cursor-grab rounded p-1 text-text-tertiary opacity-0 group-hover/widget:opacity-100 transition hover:bg-bg-elevated hover:text-text-primary active:cursor-grabbing shrink-0"
+              className="chart-drag-handle cursor-grab rounded p-1 text-text-tertiary opacity-0 group-hover/widget:opacity-100 transition hover:bg-bg-elevated hover:text-text-primary active:cursor-grabbing shrink-0"
               title="Glisser pour réordonner"
               aria-label="Glisser pour réordonner"
             >
@@ -784,12 +810,44 @@ export function ChartWidget({
 
       {/* Affichage de la moyenne pour rating et NPS */}
       {averageScore && (
-        <div className="mb-4 flex items-baseline gap-1 bg-accent/5 rounded-lg px-3 py-2 self-start border border-accent/10">
-          <span className="text-xs text-text-secondary font-medium">Moyenne :</span>
-          <span className="text-xl font-bold text-accent font-mono">{averageScore}</span>
-          <span className="text-xs text-text-tertiary font-mono">
-            / {field.type === 'nps' ? '10' : (field.validation?.max ?? 5)}
-          </span>
+        <div className="mb-4 flex flex-col md:flex-row gap-4 items-start md:items-center w-full">
+          <div className="flex items-baseline gap-1 bg-accent/5 rounded-lg px-3 py-2 border border-accent/10 shrink-0">
+            <span className="text-xs text-text-secondary font-medium">Moyenne :</span>
+            <span className="text-xl font-bold text-accent font-mono">{averageScore}</span>
+            <span className="text-xs text-text-tertiary font-mono">
+              / {field.type === 'nps' ? (field.validation?.max ?? 10) : (field.validation?.max ?? 5)}
+            </span>
+          </div>
+
+          {npsData && npsData.total > 0 && (
+            <>
+              <div className="flex items-baseline gap-1 bg-mooove-cyan/5 rounded-lg px-3 py-2 border border-mooove-cyan/10 shrink-0">
+                <span className="text-xs text-text-secondary font-medium">Score NPS :</span>
+                <span className={cn(
+                  "text-xl font-bold font-mono",
+                  npsData.npsScore > 0 ? "text-green-600 dark:text-green-400" : npsData.npsScore < 0 ? "text-red-600 dark:text-red-400" : "text-text-primary"
+                )}>
+                  {npsData.npsScore > 0 ? `+${npsData.npsScore}` : npsData.npsScore}
+                </span>
+              </div>
+
+              {/* Barre de progression des segments NPS */}
+              <div className="flex-1 flex gap-2 w-full text-[10px] items-center">
+                <div className="flex flex-col flex-1 gap-1 min-w-[200px]">
+                  <div className="flex justify-between text-[10px] text-text-secondary select-none font-sans">
+                    <span>Promoteurs (9-10) : <span className="font-semibold text-green-600">{npsData.pctPromoters.toFixed(0)}%</span></span>
+                    <span>Passifs (7-8) : <span className="font-semibold text-amber-600">{npsData.pctPassives.toFixed(0)}%</span></span>
+                    <span>Détracteurs (0-6) : <span className="font-semibold text-red-600">{npsData.pctDetractors.toFixed(0)}%</span></span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-bg-base border border-border flex overflow-hidden">
+                    <div style={{ width: `${npsData.pctPromoters}%` }} className="bg-green-500 h-full" title={`Promoteurs: ${npsData.pctPromoters.toFixed(1)}%`} />
+                    <div style={{ width: `${npsData.pctPassives}%` }} className="bg-amber-400 h-full" title={`Passifs: ${npsData.pctPassives.toFixed(1)}%`} />
+                    <div style={{ width: `${npsData.pctDetractors}%` }} className="bg-red-500 h-full" title={`Détracteurs: ${npsData.pctDetractors.toFixed(1)}%`} />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 

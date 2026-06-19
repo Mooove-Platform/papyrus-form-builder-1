@@ -163,3 +163,84 @@
     font-style: italic;
   }
 }
+
+/* ============================================================================
+   react-grid-layout v2 — resize handle et placeholder
+   ============================================================================ */
+
+/* Override du pseudo-élément indicateur de resize : couleur Parchemin */
+.react-grid-item > .react-resizable-handle::after {
+  border-right-color: var(--papyrus-border);
+  border-bottom-color: var(--papyrus-border);
+  width: 8px;
+  height: 8px;
+}
+
+/* Fantôme de destination pendant drag/resize — v2 : classe combinée */
+.react-grid-item.react-grid-placeholder {
+  background: var(--papyrus-border) !important;
+  opacity: 0.25 !important;
+  border-radius: 20px;
+}
+
+/* Widget en cours de déplacement */
+.react-grid-item.react-draggable-dragging .chart-widget-grid-item {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  opacity: 0.85;
+}
+
+/* Assure que le contenu des widgets ne déborde jamais hors de la zone allouée */
+.chart-widget-grid-item {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ============================================================================
+   @media print — export PDF via window.print()
+   ============================================================================ */
+@media print {
+  /* Masque la navigation, la sidebar et les contrôles interactifs */
+  nav,
+  aside,
+  [data-sidebar],
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  /* Redonne au grid un flux normal pour l'impression */
+  .react-grid-layout {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 16px !important;
+    position: static !important;
+    height: auto !important;
+  }
+
+  /* Chaque item revient en flux — plus d'absolu, plus de transform */
+  .react-grid-item {
+    position: static !important;
+    transform: none !important;
+    width: auto !important;
+    height: auto !important;
+    /* Évite qu'un widget soit coupé entre deux pages */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .chart-widget-grid-item {
+    height: auto !important;
+    min-height: 280px;
+    overflow: visible !important;
+  }
+
+  /* Masque les handles drag/resize à l'impression */
+  .react-resizable-handle,
+  .chart-drag-handle {
+    display: none !important;
+  }
+}
