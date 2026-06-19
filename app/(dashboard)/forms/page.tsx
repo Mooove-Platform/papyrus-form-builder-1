@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FileText, Pencil, Plus, Search, Send, SquareSlash, Trash2, User, Users, X, MoreHorizontal, Copy, Edit2, Upload, Share2, FolderInput, Download, Sparkles, ExternalLink } from 'lucide-react';
+import { FileText, Pencil, Plus, Search, Send, SquareSlash, Trash2, User, Users, X, MoreHorizontal, Copy, Edit2, Upload, Share2, FolderInput, Download, Sparkles, ExternalLink, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
@@ -15,6 +15,7 @@ import { CURRENT_USER_ID } from '@/lib/mode';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/Toast';
 import type { Form, FormStatus, Workspace } from '@/types';
+import { ClosingDateModal } from '@/components/dashboard/ClosingDateModal';
 
 type OwnerFilter = 'mine' | 'shared';
 type StatusFilter = 'all' | FormStatus;
@@ -142,6 +143,7 @@ export default function FormsListPage() {
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [movingFormId, setMovingFormId] = useState<string | null>(null);
+  const [closingDateForm, setClosingDateForm] = useState<Form | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiJsonInput, setAiJsonInput] = useState('');
@@ -391,6 +393,21 @@ export default function FormsListPage() {
     } catch (error) {
       console.error('Failed to rename form:', error);
       toast.error('Erreur lors du renommage');
+    }
+  }
+
+  async function handleSaveClosingDate(closesAt: string | null) {
+    if (!closingDateForm) return;
+    try {
+      const updated = await updateForm(closingDateForm.id, { closes_at: closesAt });
+      if (updated) {
+        toast.success('Date de clôture mise à jour');
+      } else {
+        toast.error('Erreur lors de la mise à jour de la date de clôture');
+      }
+    } catch (error) {
+      console.error('Failed to update closing date:', error);
+      toast.error('Erreur lors de la mise à jour de la date de clôture');
     }
   }
 
@@ -792,6 +809,7 @@ export default function FormsListPage() {
           onDuplicate={handleDuplicate}
           onRename={handleRename}
           onMoveForm={(formId) => setMovingFormId(formId)}
+          onEditClosingDate={(form) => setClosingDateForm(form)}
           onShareForm={(url) => {
             copyToClipboard(url);
             toast.success('Lien de partage copié !');
@@ -1156,6 +1174,14 @@ Q2 - Pourquoi ? (texte libre)
         message={`« ${deleteConfirm?.title ?? ''} » sera supprimé définitivement. Cette action est irréversible.`}
         confirmLabel="Supprimer"
       />
+
+      <ClosingDateModal
+        isOpen={!!closingDateForm}
+        onClose={() => setClosingDateForm(null)}
+        initialClosesAt={closingDateForm ? closingDateForm.closes_at || null : null}
+        onSave={handleSaveClosingDate}
+        formTitle={closingDateForm ? closingDateForm.title : ''}
+      />
     </div>
   );
 }
@@ -1205,7 +1231,8 @@ function FormsTable({
   onDuplicate,
   onRename,
   onMoveForm,
-  onShareForm
+  onShareForm,
+  onEditClosingDate
 }: {
   forms: Form[];
   onDelete: (id: string, title: string) => void;
@@ -1213,6 +1240,7 @@ function FormsTable({
   onRename: (id: string, newTitle: string) => void;
   onMoveForm: (id: string) => void;
   onShareForm: (url: string) => void;
+  onEditClosingDate: (form: Form) => void;
 }) {
   const router = useRouter();
   const [editingFormId, setEditingFormId] = useState<string | null>(null);
@@ -1394,7 +1422,7 @@ function FormsTable({
               <Share2 className="h-4 w-4 text-text-tertiary" />
               Copier le lien de partage
             </button>
-            <button
+             <button
               onClick={() => {
                 onMoveForm(activeMenuId);
                 setActiveMenuId(null);
@@ -1403,6 +1431,19 @@ function FormsTable({
             >
               <FolderInput className="h-4 w-4 text-text-tertiary" />
               Changer d'espace de travail
+            </button>
+            <button
+              onClick={() => {
+                const form = forms.find(f => f.id === activeMenuId);
+                if (form) {
+                  onEditClosingDate(form);
+                }
+                setActiveMenuId(null);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition rounded"
+            >
+              <Clock className="h-4 w-4 text-text-tertiary" />
+              Date de clôture
             </button>
             <button
               onClick={() => {

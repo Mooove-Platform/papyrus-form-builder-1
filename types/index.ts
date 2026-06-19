@@ -220,6 +220,15 @@ export interface FormTheme {
   score_description?: string;
   /** Niveaux de maturité personnalisés */
   score_levels?: ScoreLevel[];
+  /** Configuration du tableau de bord des graphiques */
+  dashboard_config?: DashboardConfig;
+}
+
+export interface DashboardConfig {
+  chart_order?: string[];
+  chart_titles?: Record<string, string>;
+  deleted_charts?: string[];
+  chart_matrix_types?: Record<string, 'heatmap' | 'bar'>;
 }
 
 export interface ScoreLevel {

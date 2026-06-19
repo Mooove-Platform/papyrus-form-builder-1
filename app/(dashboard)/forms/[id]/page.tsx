@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect, Suspense } from 'react';
+import { Component, useMemo, useState, useEffect, Suspense, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -18,7 +18,9 @@ import {
   Link2,
   ListChecks,
   MoreHorizontal,
+  Pencil,
   Share2,
+  Trash2,
   TrendingUp,
   Users
 } from 'lucide-react';
@@ -38,6 +40,35 @@ import { cn, getBaseUrl } from '@/lib/utils';
 import type { Form, Field } from '@/types';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/components/ui/Toast';
+import { ClosingDateModal } from '@/components/dashboard/ClosingDateModal';
+
+// Drag & Drop imports for dashboard overview
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy
+} from '@dnd-kit/sortable';
+import { SortableChartWidget } from '@/components/dashboard/ChartWidget';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Cell
+} from 'recharts';
+import { calculateFormScore, DEFAULT_SCORE_LEVELS } from '@/lib/scoring';
+import { Award } from 'lucide-react';
 
 type Tab = 'overview' | 'responses' | 'share';
 
@@ -50,6 +81,34 @@ function FormDashboardContent() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showClosingDateModal, setShowClosingDateModal] = useState(false);
+
+  // Réponses soumises partagées entre les onglets
+  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(true);
+
+  // Charger toutes les réponses depuis Supabase
+  useEffect(() => {
+    async function fetchSubmissions() {
+      if (!form) return;
+      const supabase = createClient();
+      try {
+        const { data, error } = await supabase
+          .from('submissions')
+          .select('*')
+          .eq('form_id', form.id)
+          .order('completed_at', { ascending: false });
+
+        if (error) throw error;
+        setSubmissions(data || []);
+      } catch (err) {
+        console.error('Failed to fetch submissions:', err);
+      } finally {
+        setSubmissionsLoading(false);
+      }
+    }
+    fetchSubmissions();
+  }, [form?.id]);
 
   // Charger le nom du workspace
   useEffect(() => {
@@ -158,6 +217,18 @@ function FormDashboardContent() {
     setMenuOpen(false);
   }
 
+  async function handleSaveClosingDate(closesAt: string | null) {
+    if (!form) return;
+    try {
+      await updateForm(form.id, { closes_at: closesAt });
+      toast.success('Date de clôture mise à jour');
+    } catch (error) {
+      console.error('Failed to update closing date:', error);
+      toast.error('Erreur lors de la mise à jour de la date de clôture');
+      throw error;
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-8">
       {/* Header */}
@@ -172,10 +243,11 @@ function FormDashboardContent() {
         onDelete={handleDelete}
         onCopyLink={handleCopyLink}
         onMove={handleMove}
+        onEditClosingDate={() => setShowClosingDateModal(true)}
       />
 
-      {/* Stats — placeholder en attendant v0.2 */}
-      <StatsRow />
+      {/* Stats — avec les vraies réponses du formulaire */}
+      <StatsRow submissions={submissions} loading={submissionsLoading} />
 
       {/* Onglets */}
       <div className="border-b border-border">
@@ -193,8 +265,21 @@ function FormDashboardContent() {
       </div>
 
       {/* Contenu de l'onglet */}
-      {tab === 'overview' && <OverviewTab form={form} />}
-      {tab === 'responses' && <ResponsesTab form={form} />}
+      {tab === 'overview' && (
+        <OverviewTab 
+          form={form} 
+          submissions={submissions} 
+          loading={submissionsLoading} 
+        />
+      )}
+      {tab === 'responses' && (
+        <ResponsesTab 
+          form={form} 
+          submissions={submissions} 
+          setSubmissions={setSubmissions} 
+          loading={submissionsLoading} 
+        />
+      )}
       {tab === 'share' && <ShareTab form={form} />}
 
       <ConfirmDialog
@@ -204,6 +289,14 @@ function FormDashboardContent() {
         title="Supprimer ce formulaire ?"
         message={`« ${form.title} » sera supprimé définitivement. Cette action est irréversible.`}
         confirmLabel="Supprimer"
+      />
+
+      <ClosingDateModal
+        isOpen={showClosingDateModal}
+        onClose={() => setShowClosingDateModal(false)}
+        initialClosesAt={form.closes_at || null}
+        onSave={handleSaveClosingDate}
+        formTitle={form.title}
       />
     </div>
   );
@@ -230,7 +323,8 @@ function Header({
   onToggleTemplate,
   onDelete,
   onCopyLink,
-  onMove
+  onMove,
+  onEditClosingDate
 }: {
   form: Form;
   workspaceName: string | null;
@@ -242,6 +336,7 @@ function Header({
   onDelete: () => void;
   onCopyLink: () => void;
   onMove: () => void;
+  onEditClosingDate: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -267,6 +362,21 @@ function Header({
             <>
               <span>·</span>
               <span className="font-semibold text-text-secondary">{workspaceName}</span>
+            </>
+          )}
+          {form.closes_at && (
+            <>
+              <span>·</span>
+              <span className={cn(
+                "font-medium flex items-center gap-1",
+                new Date(form.closes_at) > new Date() ? 'text-orange-500' : 'text-red-500'
+              )}>
+                <Clock className="h-3.5 w-3.5" />
+                {new Date(form.closes_at) > new Date()
+                  ? `Clôture le ${new Date(form.closes_at).toLocaleDateString('fr-FR')} à ${new Date(form.closes_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}`
+                  : `Clos le ${new Date(form.closes_at).toLocaleDateString('fr-FR')}`
+                }
+              </span>
             </>
           )}
         </p>
@@ -310,6 +420,15 @@ function Header({
                   label="Déplacer"
                   hint="Vers un autre espace de travail"
                   onClick={onMove}
+                />
+                <MenuItem
+                  icon={<Clock className="h-4 w-4" />}
+                  label="Date de clôture"
+                  hint={form.closes_at ? `Clôture le ${new Date(form.closes_at).toLocaleDateString('fr-FR')}` : "Définir une date limite"}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onEditClosingDate();
+                  }}
                 />
                 <MenuItem
                   icon={<LayoutTemplate className="h-4 w-4" />}
@@ -413,12 +532,13 @@ function TabButton({
 }
 
 // ============================================================================
-// Stats (placeholder en attendant les vraies réponses — v0.2)
+// Stats (avec les vraies réponses)
 // ============================================================================
-function StatsRow() {
+function StatsRow({ submissions, loading }: { submissions: any[]; loading: boolean }) {
+  const count = loading ? '...' : String(submissions.length);
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-      <StatCard label="Réponses" value="—" icon={<Users className="h-4 w-4" />} hint="bientôt" />
+      <StatCard label="Réponses" value={count} icon={<Users className="h-4 w-4" />} />
       <StatCard label="Vues" value="—" icon={<TrendingUp className="h-4 w-4" />} hint="bientôt" />
       <StatCard
         label="Taux complétion"
@@ -455,92 +575,458 @@ function StatCard({
 }
 
 // ============================================================================
-// Onglet Vue d'ensemble — placeholder pour les graphiques par champ
+// Helper pour ordonner les graphiques du tableau de bord
 // ============================================================================
-function OverviewTab({ form }: { form: Form }) {
-  const chartableFields = (form.fields ?? []).filter((f) =>
-    ['single_choice', 'multiple_choice', 'dropdown', 'rating', 'nps', 'date'].includes(f.type)
+function getOrderedChartFields(fields: Field[], chartOrder?: string[], deletedCharts?: string[]): Field[] {
+  const activeFields = fields.filter(
+    f => !['section_break', 'statement', 'image', 'video', 'file'].includes(f.type) &&
+         !(deletedCharts ?? []).includes(f.id)
   );
+
+  if (!chartOrder || chartOrder.length === 0) {
+    return [...activeFields].sort((a, b) => a.field_order - b.field_order);
+  }
+
+  const sorted: Field[] = [];
+  chartOrder.forEach(id => {
+    const found = activeFields.find(f => f.id === id);
+    if (found) {
+      sorted.push(found);
+    }
+  });
+
+  activeFields.forEach(f => {
+    if (!sorted.some(s => s.id === f.id)) {
+      sorted.push(f);
+    }
+  });
+
+  return sorted;
+}
+
+// ============================================================================
+// ErrorBoundary par widget — isole les crashs de rendu de chaque graphique
+// ============================================================================
+interface ChartErrorBoundaryProps {
+  children: ReactNode;
+  fieldLabel: string;
+}
+interface ChartErrorBoundaryState {
+  hasError: boolean;
+  errorMessage: string | null;
+}
+
+class ChartErrorBoundary extends Component<ChartErrorBoundaryProps, ChartErrorBoundaryState> {
+  constructor(props: ChartErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, errorMessage: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ChartErrorBoundaryState {
+    return { hasError: true, errorMessage: error.message };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error(`[ChartWidget] Erreur de rendu pour "${this.props.fieldLabel}":`, error.message);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-lg border border-danger/30 bg-danger/5 p-5 min-h-[120px] flex flex-col justify-center gap-2">
+          <p className="text-xs font-semibold text-danger">
+            Erreur de rendu — {this.props.fieldLabel}
+          </p>
+          <p className="text-[11px] font-mono text-text-tertiary break-all">
+            {this.state.errorMessage}
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================================
+// Onglet Vue d'ensemble — Graphiques automatiques et interactifs
+// ============================================================================
+interface OverviewTabProps {
+  form: Form;
+  submissions: any[];
+  loading: boolean;
+}
+
+function OverviewTab({ form, submissions, loading }: OverviewTabProps) {
+  const [localForm, setLocalForm] = useState<Form>(form);
+
+  useEffect(() => {
+    if (form) setLocalForm(form);
+  }, [form]);
+
+  const dashboardConfig = localForm.theme.dashboard_config ?? {};
+  const chartOrder = dashboardConfig.chart_order ?? [];
+  const deletedCharts = dashboardConfig.deleted_charts ?? [];
+  const chartTitles = dashboardConfig.chart_titles ?? {};
+  const chartMatrixTypes = dashboardConfig.chart_matrix_types ?? {};
+
+  // Calcule les statistiques du score si activé
+  const scoreStats = useMemo(() => {
+    if (!localForm.scoring_enabled || submissions.length === 0) return null;
+
+    let totalPercentage = 0;
+    let totalScoreSum = 0;
+    let maxScoreSum = 0;
+    let scoredCount = 0;
+
+    const levels = localForm.theme.score_levels && localForm.theme.score_levels.length > 0
+      ? localForm.theme.score_levels
+      : DEFAULT_SCORE_LEVELS;
+
+    const distribution = levels.map(level => ({
+      ...level,
+      count: 0
+    }));
+
+    submissions.forEach(sub => {
+      const result = calculateFormScore(localForm, sub.responses || {});
+      if (result) {
+        totalPercentage += result.percentage;
+        totalScoreSum += result.totalScore;
+        maxScoreSum += result.maxScore;
+        scoredCount++;
+
+        const sortedLevels = [...distribution].sort((a, b) => b.minPercent - a.minPercent);
+        const matched = sortedLevels.find(l => result.percentage >= l.minPercent) || sortedLevels[sortedLevels.length - 1];
+        if (matched) {
+          matched.count++;
+        }
+      }
+    });
+
+    if (scoredCount === 0) return null;
+
+    const avgPercentage = Math.round(totalPercentage / scoredCount);
+    const avgScore = (totalScoreSum / scoredCount).toFixed(1);
+    const avgMaxScore = (maxScoreSum / scoredCount).toFixed(1);
+
+    const sortedLevels = [...levels].sort((a, b) => b.minPercent - a.minPercent);
+    const matchedLevel = sortedLevels.find(l => avgPercentage >= l.minPercent) || sortedLevels[sortedLevels.length - 1];
+
+    return {
+      avgPercentage,
+      avgScore,
+      avgMaxScore,
+      scoredCount,
+      distribution,
+      matchedLevel
+    };
+  }, [localForm, submissions]);
+
+  const LEVEL_COLORS: Record<string, { text: string; bg: string; border: string; hex: string }> = {
+    green: {
+      text: 'text-emerald-600 dark:text-emerald-400',
+      bg: 'bg-emerald-50 dark:bg-emerald-950/20',
+      border: 'border-emerald-200 dark:border-emerald-900/40',
+      hex: '#10B981'
+    },
+    blue: {
+      text: 'text-blue-600 dark:text-blue-400',
+      bg: 'bg-blue-50 dark:bg-blue-950/20',
+      border: 'border-blue-200 dark:border-blue-900/40',
+      hex: '#3B82F6'
+    },
+    orange: {
+      text: 'text-amber-600 dark:text-amber-400',
+      bg: 'bg-amber-50 dark:bg-amber-950/20',
+      border: 'border-amber-200 dark:border-amber-900/40',
+      hex: '#F59E0B'
+    },
+    red: {
+      text: 'text-rose-600 dark:text-rose-400',
+      bg: 'bg-rose-50 dark:bg-rose-950/20',
+      border: 'border-rose-200 dark:border-rose-900/40',
+      hex: '#EF4444'
+    }
+  };
+
+  // Filtrer et ordonner les champs à afficher
+  const orderedFields = useMemo(() => {
+    return getOrderedChartFields(localForm.fields ?? [], chartOrder, deletedCharts);
+  }, [localForm.fields, chartOrder, deletedCharts]);
+
+  // Capteur pointer avec un seuil de déplacement pour éviter de déclencher le drag sur un simple clic
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  // Callback de changement de titre
+  const handleTitleChange = async (fieldId: string, newTitle: string) => {
+    const config = localForm.theme.dashboard_config ?? {};
+    const titles = { ...(config.chart_titles ?? {}), [fieldId]: newTitle };
+    const updatedTheme = {
+      ...localForm.theme,
+      dashboard_config: { ...config, chart_titles: titles }
+    };
+    
+    // Mise à jour optimiste
+    setLocalForm(prev => ({ ...prev, theme: updatedTheme }));
+    
+    try {
+      await updateForm(localForm.id, { theme: updatedTheme });
+      toast.success('Titre du graphique mis à jour');
+    } catch (error) {
+      console.error('Failed to update chart title:', error);
+      toast.error('Erreur lors de la mise à jour du titre');
+      setLocalForm(form);
+    }
+  };
+
+  // Callback de suppression d'un widget du dashboard
+  const handleDeleteWidget = async (fieldId: string) => {
+    const config = localForm.theme.dashboard_config ?? {};
+    const deleted = [...(config.deleted_charts ?? []), fieldId];
+    const updatedTheme = {
+      ...localForm.theme,
+      dashboard_config: { ...config, deleted_charts: deleted }
+    };
+
+    setLocalForm(prev => ({ ...prev, theme: updatedTheme }));
+
+    try {
+      await updateForm(localForm.id, { theme: updatedTheme });
+      toast.success('Graphique masqué du tableau de bord');
+    } catch (error) {
+      console.error('Failed to delete chart:', error);
+      toast.error('Erreur lors du masquage du graphique');
+      setLocalForm(form);
+    }
+  };
+
+  // Callback de changement du type de rendu pour une matrice (heatmap ou barres)
+  const handleMatrixTypeChange = async (fieldId: string, type: 'heatmap' | 'bar') => {
+    const config = localForm.theme.dashboard_config ?? {};
+    const matrixTypes = { ...(config.chart_matrix_types ?? {}), [fieldId]: type };
+    const updatedTheme = {
+      ...localForm.theme,
+      dashboard_config: { ...config, chart_matrix_types: matrixTypes }
+    };
+
+    setLocalForm(prev => ({ ...prev, theme: updatedTheme }));
+
+    try {
+      await updateForm(localForm.id, { theme: updatedTheme });
+    } catch (error) {
+      console.error('Failed to update matrix rendering:', error);
+      setLocalForm(form);
+    }
+  };
+
+  // Gestion de la fin du Drag & Drop
+  const handleDragEnd = async (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+
+    const oldIdx = orderedFields.findIndex(f => f.id === active.id);
+    const newIdx = orderedFields.findIndex(f => f.id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+
+    const reordered = arrayMove(orderedFields, oldIdx, newIdx);
+    const nextOrder = reordered.map(f => f.id);
+
+    const config = localForm.theme.dashboard_config ?? {};
+    const updatedTheme = {
+      ...localForm.theme,
+      dashboard_config: { ...config, chart_order: nextOrder }
+    };
+
+    setLocalForm(prev => ({ ...prev, theme: updatedTheme }));
+
+    try {
+      await updateForm(localForm.id, { theme: updatedTheme });
+    } catch (error) {
+      console.error('Failed to update chart order:', error);
+      setLocalForm(form);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="py-20 text-center text-sm text-text-tertiary">
+        Chargement des graphiques...
+      </div>
+    );
+  }
+
+  if (submissions.length === 0) {
+    const activeChartableCount = (localForm.fields ?? []).filter(
+      f => !['section_break', 'statement', 'image', 'video', 'file'].includes(f.type)
+    ).length;
+
+    return (
+      <div className="space-y-6">
+        <div className="rounded-lg border border-dashed border-border-strong bg-bg-surface p-10 text-center">
+          <BarChart3 className="mx-auto h-10 w-10 text-text-tertiary" />
+          <h3 className="mt-4 font-display text-xl">Pas encore de réponses à analyser</h3>
+          <p className="papyrus-meta mx-auto mt-1 max-w-md text-sm">
+            i. Quand les premières réponses arriveront, un graphique sera automatiquement
+            généré pour chacun des {activeChartableCount} champ{activeChartableCount > 1 ? 's' : ''} mesurable{activeChartableCount > 1 ? 's' : ''} de ce formulaire.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // S'il n'y a aucun graphique à afficher car ils ont tous été masqués
+  if (orderedFields.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border-strong bg-bg-surface p-10 text-center">
+        <BarChart3 className="mx-auto h-10 w-10 text-text-tertiary" />
+        <h3 className="mt-4 font-display text-xl">Tableau de bord vide</h3>
+        <p className="papyrus-meta mx-auto mt-1 max-w-md text-sm">
+          Tous les graphiques ont été masqués. Réinitialisez la configuration du tableau de bord ou rajoutez des questions pour générer de nouveaux graphiques.
+        </p>
+        <button
+          onClick={async () => {
+            const updatedTheme = {
+              ...localForm.theme,
+              dashboard_config: {}
+            };
+            setLocalForm(prev => ({ ...prev, theme: updatedTheme }));
+            await updateForm(localForm.id, { theme: updatedTheme });
+            toast.success('Tableau de bord réinitialisé');
+          }}
+          className="mt-4 rounded bg-accent px-4 py-2 text-xs font-semibold text-white hover:bg-accent-hover transition"
+        >
+          Réinitialiser le tableau de bord
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-dashed border-border-strong bg-bg-surface p-10 text-center">
-        <BarChart3 className="mx-auto h-10 w-10 text-text-tertiary" />
-        <h3 className="mt-4 font-display text-xl">Pas encore de réponses à analyser</h3>
-        <p className="papyrus-meta mx-auto mt-1 max-w-md text-sm">
-          i. Quand les premières réponses arriveront (v0.2 — page publique), un graphique sera automatiquement
-          généré pour chacun des {chartableFields.length} champ
-          {chartableFields.length > 1 ? 's' : ''} mesurable
-          {chartableFields.length > 1 ? 's' : ''} de ce formulaire.
-        </p>
-        {chartableFields.length > 0 && (
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-1.5">
-            {chartableFields.slice(0, 6).map((f) => (
-              <span
-                key={f.id}
-                className="rounded-full bg-bg-elevated px-2 py-1 text-[11px] text-text-secondary"
-              >
-                {f.label.fr || 'Question sans titre'}
-              </span>
-            ))}
-            {chartableFields.length > 6 && (
-              <span className="text-[11px] text-text-tertiary">+{chartableFields.length - 6}</span>
-            )}
+      {/* Score de maturité */}
+      {localForm.scoring_enabled && scoreStats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Card 1 : score moyen */}
+          <div className="rounded-xl border border-border bg-bg-surface p-6 flex items-center gap-4">
+            <div className="rounded-full bg-accent/10 p-2.5 shrink-0">
+              <Award className="h-6 w-6 text-accent" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-text-secondary">
+                {localForm.theme.score_label || 'Score de maturité moyen'}
+              </p>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="font-display text-4xl font-bold text-text-primary">
+                  {scoreStats.avgPercentage}%
+                </span>
+                <span className="text-xs font-mono text-text-tertiary">
+                  ({scoreStats.avgScore} / {scoreStats.avgMaxScore} pts)
+                </span>
+              </div>
+            </div>
           </div>
-        )}
+
+          {/* Card 2 : distribution par niveau */}
+          <div className="rounded-xl border border-border bg-bg-surface p-6 flex flex-col min-h-[160px]">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="h-4 w-4 text-text-secondary" />
+              <h3 className="font-display text-sm font-semibold text-text-primary">Distribution par niveau</h3>
+            </div>
+            <div className="w-full" style={{ height: 140 }}>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart
+                  data={scoreStats.distribution}
+                  layout="vertical"
+                  margin={{ top: 4, right: 15, left: 4, bottom: 4 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-weak)" />
+                  <XAxis type="number" allowDecimals={false} stroke="var(--text-tertiary)" fontSize={10} />
+                  <YAxis dataKey="title" type="category" stroke="var(--text-tertiary)" fontSize={10} width={100} />
+                  <Tooltip
+                    formatter={(value) => [`${value} répondant${Number(value) > 1 ? 's' : ''}`]}
+                    contentStyle={{ fontSize: 11, backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+                  />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={16}>
+                    {scoreStats.distribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={LEVEL_COLORS[entry.color]?.hex || 'var(--accent)'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-2">
+        <h2 className="font-display text-xl">
+          {localForm.title}
+          <span className="ml-2 text-base font-normal text-text-tertiary font-body">
+            ({submissions.length} répondant{submissions.length > 1 ? 's' : ''})
+          </span>
+        </h2>
       </div>
+
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={orderedFields.map(f => f.id)} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            {orderedFields.map((field) => {
+              const fieldTitle = chartTitles[field.id] || field.label.fr || 'Question sans titre';
+              const matrixType = chartMatrixTypes[field.id] || 'heatmap';
+
+              return (
+                <ChartErrorBoundary key={field.id} fieldLabel={fieldTitle}>
+                  <SortableChartWidget
+                    field={field}
+                    submissions={submissions}
+                    title={fieldTitle}
+                    theme={localForm.theme}
+                    matrixType={matrixType}
+                    onTitleChange={(title) => handleTitleChange(field.id, title)}
+                    onDelete={() => handleDeleteWidget(field.id)}
+                    onMatrixTypeChange={(type) => handleMatrixTypeChange(field.id, type)}
+                  />
+                </ChartErrorBoundary>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }
 
 // ============================================================================
-// Onglet Réponses — table brute + export
+// Onglet Réponses — table brute + export + delete + copy + edit inline
 // ============================================================================
-function ResponsesTab({ form }: { form: Form }) {
-  const [submissions, setSubmissions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+interface ResponsesTabProps {
+  form: Form;
+  submissions: any[];
+  setSubmissions: React.Dispatch<React.SetStateAction<any[]>>;
+  loading: boolean;
+}
 
-  useEffect(() => {
-    async function fetchSubmissions() {
-      const supabase = createClient();
-      try {
-        const { data, error } = await supabase
-          .from('submissions')
-          .select('*')
-          .eq('form_id', form.id)
-          .order('completed_at', { ascending: false })
-          .limit(50);
-
-        if (error) throw error;
-        setSubmissions(data || []);
-      } catch (err) {
-        console.error('Failed to fetch submissions:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchSubmissions();
-  }, [form.id]);
+function ResponsesTab({ form, submissions, setSubmissions, loading }: ResponsesTabProps) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editingCell, setEditingCell] = useState<{ subId: string; fieldId: string } | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [editedCells, setEditedCells] = useState<Set<string>>(new Set());
+  const [copiedCell, setCopiedCell] = useState<string | null>(null);
 
   const fields = (form.fields ?? []).filter(
     (f) => f.type !== 'section_break' && f.type !== 'statement' && f.type !== 'image' && f.type !== 'video'
   );
 
-  function renderResponseValue(field: Field, value: any) {
+  function renderResponseValue(field: Field, value: any): string {
     if (value === undefined || value === null || value === '') return '—';
 
-    // Résoudre les options pour les choix simples, multiples et dropdowns
     if (['single_choice', 'multiple_choice', 'dropdown'].includes(field.type)) {
       const getOptionLabel = (optId: string) => {
         const option = field.options?.find((o: any) => o.id === optId);
         return option ? (option.label.fr || option.label.en || optId) : optId;
       };
-
-      if (Array.isArray(value)) {
-        return value.map(getOptionLabel).join(', ');
-      }
+      if (Array.isArray(value)) return value.map(getOptionLabel).join(', ');
       if (typeof value === 'string') {
-        // Au cas où les choix multiples sont stockés sous forme de chaîne à virgule
         if (value.includes(',') && !field.options?.some((o: any) => o.id === value)) {
           return value.split(',').map((v) => getOptionLabel(v.trim())).join(', ');
         }
@@ -548,7 +1034,6 @@ function ResponsesTab({ form }: { form: Form }) {
       }
     }
 
-    // Résoudre pour les matrices
     if (field.type === 'matrix') {
       if (typeof value === 'object') {
         return Object.entries(value)
@@ -563,14 +1048,63 @@ function ResponsesTab({ form }: { form: Form }) {
       }
     }
 
-    // Fallback standard
     if (typeof value === 'object') {
-      if (Array.isArray(value)) {
-        return value.join(', ');
-      }
+      if (Array.isArray(value)) return value.join(', ');
       return JSON.stringify(value);
     }
     return String(value);
+  }
+
+  async function handleDelete(subId: string) {
+    const supabase = createClient();
+    const { error } = await supabase.from('submissions').delete().eq('id', subId);
+    if (!error) {
+      setSubmissions((prev) => prev.filter((s) => s.id !== subId));
+      toast.success('Réponse supprimée');
+    } else {
+      toast.error('Erreur lors de la suppression');
+    }
+    setConfirmDeleteId(null);
+  }
+
+  async function handleCopyCell(text: string, cellKey: string) {
+    if (text === '—') return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCell(cellKey);
+      setTimeout(() => setCopiedCell(null), 1500);
+    } catch {
+      toast.error('Impossible de copier');
+    }
+  }
+
+  function startEdit(subId: string, fieldId: string, renderedValue: string) {
+    setEditingCell({ subId, fieldId });
+    setEditValue(renderedValue === '—' ? '' : renderedValue);
+  }
+
+  async function saveEdit() {
+    if (!editingCell) return;
+    const { subId, fieldId } = editingCell;
+    const sub = submissions.find((s) => s.id === subId);
+    if (!sub) { setEditingCell(null); return; }
+
+    const newResponses = { ...(sub.responses ?? {}), [fieldId]: editValue };
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('submissions')
+      .update({ responses: newResponses })
+      .eq('id', subId);
+
+    if (!error) {
+      setSubmissions((prev) =>
+        prev.map((s) => (s.id === subId ? { ...s, responses: newResponses } : s))
+      );
+      setEditedCells((prev) => new Set([...prev, `${subId}:${fieldId}`]));
+    } else {
+      toast.error('Erreur lors de la modification');
+    }
+    setEditingCell(null);
   }
 
   const handleExportExcel = () => {
@@ -592,23 +1126,16 @@ function ResponsesTab({ form }: { form: Form }) {
       const slugTitle = form.title
         .toLowerCase()
         .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[̀-ͯ]/g, '')
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)+/g, '');
-
       const dateStr = new Date().toISOString().split('T')[0];
-      const filename = `${slugTitle}-reponses-${dateStr}.xlsx`;
-
-      XLSX.writeFile(wb, filename);
+      XLSX.writeFile(wb, `${slugTitle}-reponses-${dateStr}.xlsx`);
     });
   };
 
   if (loading) {
-    return (
-      <div className="py-12 text-center papyrus-meta text-sm">
-        Chargement des réponses...
-      </div>
-    );
+    return <div className="py-12 text-center papyrus-meta text-sm">Chargement des réponses...</div>;
   }
 
   if (submissions.length === 0) {
@@ -629,25 +1156,22 @@ function ResponsesTab({ form }: { form: Form }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl">
-          Réponses brutes ({submissions.length})
-        </h2>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            iconLeft={<Download className="h-3.5 w-3.5" />}
-            onClick={handleExportExcel}
-          >
-            Exporter Excel
-          </Button>
-        </div>
+        <h2 className="font-display text-xl">Réponses brutes ({submissions.length})</h2>
+        <Button
+          variant="secondary"
+          size="sm"
+          iconLeft={<Download className="h-3.5 w-3.5" />}
+          onClick={handleExportExcel}
+        >
+          Exporter Excel
+        </Button>
       </div>
 
       <div className="w-full overflow-x-auto rounded-lg border border-border bg-bg-surface">
         <table className="w-full border-collapse text-left text-sm text-text-primary">
           <thead className="border-b border-border bg-bg-elevated text-xs font-semibold uppercase text-text-secondary">
             <tr>
+              <th className="w-8 px-2 py-3" />
               <th className="px-4 py-3 min-w-[150px]">Date de soumission</th>
               {fields.map((f) => (
                 <th key={f.id} className="px-4 py-3 min-w-[200px] max-w-[350px] truncate">
@@ -658,28 +1182,118 @@ function ResponsesTab({ form }: { form: Form }) {
           </thead>
           <tbody className="divide-y divide-border">
             {submissions.map((sub) => (
-              <tr key={sub.id} className="hover:bg-bg-elevated transition-colors">
+              <tr
+                key={sub.id}
+                className={cn(
+                  'group/row hover:bg-bg-elevated transition-colors',
+                  confirmDeleteId === sub.id && 'bg-danger/5'
+                )}
+              >
+                {/* Colonne suppression */}
+                <td className="w-8 px-2 py-3">
+                  {confirmDeleteId === sub.id ? (
+                    <div className="flex items-center gap-1 whitespace-nowrap">
+                      <button
+                        onClick={() => handleDelete(sub.id)}
+                        className="text-[11px] font-semibold text-danger hover:underline"
+                      >
+                        Oui
+                      </button>
+                      <span className="text-[11px] text-text-tertiary">/</span>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="text-[11px] text-text-secondary hover:underline"
+                      >
+                        Non
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDeleteId(sub.id)}
+                      className="invisible group-hover/row:visible text-text-tertiary hover:text-danger transition-colors"
+                      title="Supprimer cette réponse"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </td>
+
+                {/* Date */}
                 <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-text-secondary">
                   {new Date(sub.completed_at).toLocaleString('fr-FR')}
                 </td>
+
+                {/* Cellules de réponse */}
                 {fields.map((f) => {
                   const val = sub.responses?.[f.id];
                   const renderedVal = renderResponseValue(f, val);
-                  const isUrl = typeof renderedVal === 'string' && (renderedVal.startsWith('http://') || renderedVal.startsWith('https://'));
+                  const isUrl = typeof renderedVal === 'string' &&
+                    (renderedVal.startsWith('http://') || renderedVal.startsWith('https://'));
+                  const cellKey = `${sub.id}:${f.id}`;
+                  const isEditing = editingCell?.subId === sub.id && editingCell?.fieldId === f.id;
+                  const isEdited = editedCells.has(cellKey);
+                  const isCopied = copiedCell === cellKey;
 
                   return (
-                    <td key={f.id} className="px-4 py-3 max-w-[350px] truncate" title={renderedVal}>
-                      {isUrl ? (
-                        <a
-                          href={renderedVal}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-accent hover:underline inline-flex items-center gap-1 font-medium"
-                        >
-                          Ouvrir le fichier ↗
-                        </a>
+                    <td key={f.id} className="group/cell px-4 py-3 max-w-[350px]">
+                      {isEditing ? (
+                        <input
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={saveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); saveEdit(); }
+                            if (e.key === 'Escape') setEditingCell(null);
+                          }}
+                          className="w-full rounded border border-accent bg-bg-base px-2 py-0.5 text-sm focus:outline-none"
+                        />
                       ) : (
-                        renderedVal
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span className="flex-1 truncate" title={renderedVal}>
+                            {isEdited && (
+                              <span className="mr-1 text-[10px] text-text-tertiary" title="Modifié manuellement">
+                                ✎
+                              </span>
+                            )}
+                            {isUrl ? (
+                              <a
+                                href={renderedVal}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 font-medium text-accent hover:underline"
+                              >
+                                Ouvrir le fichier ↗
+                              </a>
+                            ) : (
+                              renderedVal
+                            )}
+                          </span>
+                          {renderedVal !== '—' && (
+                            <div className="invisible flex shrink-0 items-center gap-0.5 group-hover/cell:visible">
+                              <button
+                                onClick={() => handleCopyCell(renderedVal, cellKey)}
+                                className="rounded p-0.5 text-text-tertiary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+                                title="Copier"
+                              >
+                                {isCopied ? (
+                                  <Check className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                              </button>
+                              {!isUrl && (
+                                <button
+                                  onClick={() => startEdit(sub.id, f.id, renderedVal)}
+                                  className="rounded p-0.5 text-text-tertiary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+                                  title="Modifier"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
                   );
