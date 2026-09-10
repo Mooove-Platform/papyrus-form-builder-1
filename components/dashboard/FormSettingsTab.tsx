@@ -1,10 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Info, Loader2, Save } from 'lucide-react';
+import {
+  AlertTriangle,
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Info,
+  Loader2,
+  Save
+} from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Switch } from '@/components/ui/Switch';
 import { toast } from '@/components/ui/Toast';
+import { respondentStrings } from '@/lib/respondent-ui';
 import { stableStringify } from '@/lib/stable-stringify';
 import { updateForm } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -63,6 +72,19 @@ const LANGUAGES = [
   { value: 'fr', label: 'Français' },
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Español' }
+];
+
+/** Ce que dit le bouton quand l'auteur n'a rien ecrit — sert de texte fantome. */
+const DEFAULT_SUBMIT_LABELS: Record<string, string> = {
+  fr: respondentStrings('fr').submit,
+  en: respondentStrings('en').submit,
+  es: respondentStrings('es').submit
+};
+
+const SUBMIT_ALIGNMENTS = [
+  { value: 'left' as const, label: 'A gauche', icon: AlignLeft },
+  { value: 'center' as const, label: 'Au centre', icon: AlignCenter },
+  { value: 'right' as const, label: 'A droite', icon: AlignRight }
 ];
 
 /** Convertit un ISO 8601 en valeur acceptée par `<input type="datetime-local">`. */
@@ -236,6 +258,56 @@ export function FormSettingsTab({ form }: { form: Form }) {
             />
           )}
         </SettingRow>
+
+        {/*
+          Le bouton d’envoi.
+
+          Il était écrit en dur : « Envoyer », collé à droite. Un formulaire
+          rédigé en anglais s’envoyait donc avec un bouton français, et une
+          action qui porte un nom propre — « Réserver ma place » — n’avait aucun
+          moyen de le dire.
+        */}
+        <SettingRow
+          label="Texte du bouton d’envoi"
+          description="Laissez vide pour utiliser le mot par défaut de la langue choisie ci-dessus."
+          control={
+            <TextField
+              value={draft.settings.submit_label ?? ''}
+              onChange={(value) => patchSettings({ submit_label: value })}
+              placeholder={DEFAULT_SUBMIT_LABELS[draft.defaultLanguage] ?? 'Envoyer'}
+            />
+          }
+        />
+
+        <SettingRow
+          label="Position du bouton d’envoi"
+          description="Sur les pages intermédiaires, le bouton reste à droite face au bouton de retour."
+          control={
+            <div className="flex gap-1.5">
+              {SUBMIT_ALIGNMENTS.map((option) => {
+                const active = (draft.settings.submit_align ?? 'right') === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => patchSettings({ submit_align: option.value })}
+                    aria-pressed={active}
+                    title={option.label}
+                    className={cn(
+                      'flex h-9 w-11 items-center justify-center rounded-md border transition',
+                      active
+                        ? 'border-accent bg-accent/5 text-text-primary'
+                        : 'border-border-strong text-text-tertiary hover:border-accent'
+                    )}
+                  >
+                    <option.icon className="h-4 w-4" aria-hidden />
+                    <span className="sr-only">{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          }
+        />
 
         <SettingRow
           label="Barre de progression"

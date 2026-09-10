@@ -9,6 +9,7 @@ import { FormHeader } from '@/components/builder/FormHeader';
 import { ScoreDisplay } from '@/components/respondent/ScoreDisplay';
 import { pickText, renderTemplate } from '@/lib/email/tokens';
 import { cn } from '@/lib/utils';
+import { useRespondentStrings } from './respondent-strings';
 
 /**
  * Le dernier écran du parcours.
@@ -44,6 +45,7 @@ export function ThankYouPage({
 }: Props) {
   const config = (form.confirmation_config ?? {}) as ConfirmationConfig;
   const language = form.default_language || 'fr';
+  const strings = useRespondentStrings();
 
   const resolve = (template: string) =>
     template
@@ -55,11 +57,11 @@ export function ThankYouPage({
         })
       : '';
 
-  const title = resolve(pickText(config.title, language)) || 'Merci !';
+  const title = resolve(pickText(config.title, language)) || strings.thankYouTitle;
   const message =
     resolve(pickText(config.message, language)) ||
     form.theme.score_description ||
-    'Merci pour votre réponse ! Nous avons bien reçu vos informations.';
+    strings.thankYouBody;
 
   const note = resolve(pickText(config.email_note, language));
   const referenceLabel =

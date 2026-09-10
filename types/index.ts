@@ -715,6 +715,17 @@ export interface FormSettings {
   /** Passe à la page suivante dès qu'une question à choix unique est répondue. */
   auto_jump?: boolean;
 
+  // --- Bouton d'envoi ---
+  /**
+   * Le texte du bouton d'envoi, à la place de celui de la langue.
+   *
+   * Vide = « Envoyer » (ou sa traduction). Sert quand l'action a un nom
+   * propre : « Réserver ma place », « Get my quote ».
+   */
+  submit_label?: string;
+  /** Où se pose le bouton d'envoi. `right` est l'historique. */
+  submit_align?: 'left' | 'center' | 'right';
+
   /** Dernière configuration d'intégration utilisée — mémorisée pour l'interface. */
   embed?: EmbedSettings;
 

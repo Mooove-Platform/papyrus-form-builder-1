@@ -9,6 +9,7 @@ import { PhoneField as RespondentPhoneField } from '@/components/respondent/fiel
 import { FileUploadField } from '@/components/respondent/fields/FileUploadField';
 import { parseVideoEmbed } from '@/lib/video';
 import { cn } from '@/lib/utils';
+import { useRespondentStrings } from '@/components/public/respondent-strings';
 import { LIMITS } from '@/lib/constants/limits';
 import { toast } from '@/components/ui/Toast';
 import { useAttachmentUpload } from '@/lib/hooks/useAttachmentUpload';
@@ -573,6 +574,7 @@ function ValidatedTextInput({
   value?: string;
   onValueChange?: (val: string) => void;
 }) {
+  const uiStrings = useRespondentStrings();
   const [localValue, setLocalValue] = useState('');
   const [touched, setTouched] = useState(false);
   const value = controlledValue !== undefined ? controlledValue : localValue;
@@ -639,7 +641,7 @@ function ValidatedTextInput({
       {!preview && maxLength && (
         <div className="flex justify-between text-xs">
           <span className="text-text-tertiary">
-            {currentLength}/{maxLength} caractères
+            {uiStrings.characterCount(currentLength, maxLength)}
           </span>
           {isNearLimit && (
             <span className={cn(
@@ -655,7 +657,7 @@ function ValidatedTextInput({
       {/* Mode preview : affiche seulement la limite */}
       {preview && maxLength && (
         <p className="text-xs text-text-tertiary">
-          Maximum {maxLength} caractères
+          {uiStrings.maxCharacters(maxLength)}
         </p>
       )}
 
@@ -2404,6 +2406,7 @@ function ShortTextWithCounter({
   value?: string;
   onValueChange?: (val: string) => void;
 }) {
+  const uiStrings = useRespondentStrings();
   const [localValue, setLocalValue] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('none');
   const [touched, setTouched] = useState(false);
@@ -2459,7 +2462,7 @@ function ShortTextWithCounter({
         {!preview && (
           <div className="flex justify-between text-xs">
             <span className="text-text-tertiary">
-              {currentLength}/{maxLength} caractères
+              {uiStrings.characterCount(currentLength, maxLength)}
             </span>
             {isNearLimit && (
               <span className={cn(
@@ -2474,7 +2477,7 @@ function ShortTextWithCounter({
 
         {preview && (
           <p className="text-xs text-text-tertiary">
-            Maximum {maxLength} caractères
+            {uiStrings.maxCharacters(maxLength)}
           </p>
         )}
       </div>
@@ -2676,6 +2679,7 @@ function LongTextWithCounter({
   value?: string;
   onValueChange?: (val: string) => void;
 }) {
+  const uiStrings = useRespondentStrings();
   const [localValue, setLocalValue] = useState('');
   const currentValue = value !== undefined ? value : localValue;
   const handleValueChange = (val: string) => {
@@ -2726,7 +2730,7 @@ function LongTextWithCounter({
       {!preview && (
         <div className="flex justify-between text-xs">
           <span className="text-text-tertiary">
-            {currentLength}/{maxLength} caractères
+            {uiStrings.characterCount(currentLength, maxLength)}
           </span>
           {isNearLimit && (
             <span className={cn(
@@ -2742,7 +2746,7 @@ function LongTextWithCounter({
       {/* Info limite pour mode preview */}
       {preview && (
         <p className="text-xs text-text-tertiary">
-          Maximum {maxLength} caractères
+          {uiStrings.maxCharacters(maxLength)}
         </p>
       )}
     </div>

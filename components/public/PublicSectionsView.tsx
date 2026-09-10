@@ -10,6 +10,8 @@ import { PublicFieldCard } from './PublicFieldCard';
 import { PricingSummary } from './PricingSummary';
 import { buildPages } from '@/lib/sections';
 import { cn } from '@/lib/utils';
+import { submitAlignClass, submitLabel } from '@/lib/respondent-ui';
+import { useRespondentStrings } from './respondent-strings';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { toast } from '@/components/ui/Toast';
 
@@ -88,6 +90,12 @@ export function PublicSectionsView({
   const isLast = pageIdx === total - 1;
   const isFirst = pageIdx === 0;
 
+  /** Il n'y a un « précédent » que s'il existe une page derrière. */
+  const canGoBack = !isFirst;
+
+  const strings = useRespondentStrings();
+  const settings = form.settings ?? {};
+
   // Une section sans titre ne montre pas d'entête : c'est le cas de la section
   // d'ouverture d'un formulaire qui commence directement par ses questions.
   const pageHeader = currentPage?.title?.fr ? currentPage : null;
@@ -161,7 +169,7 @@ export function PublicSectionsView({
         />
         <div className="px-8 py-4">
           <p className="text-sm text-text-secondary text-center">
-            Page {pageIdx + 1} sur {total}
+            {strings.pageOf(pageIdx + 1, total)}
           </p>
         </div>
       </div>
@@ -245,22 +253,36 @@ export function PublicSectionsView({
           </div>
         )}
 
-        {/* Navigation */}
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => setPageIdx(i => Math.max(0, i - 1))}
-            disabled={isFirst}
-            className={cn(
-              'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition',
-              isFirst
-                ? 'text-text-tertiary cursor-not-allowed'
-                : 'text-text-primary hover:bg-bg-elevated'
-            )}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Précédent
-          </button>
+        {/*
+          Navigation.
+
+          **Le bouton « Précédent » n'existe plus sur la première page.** Il y
+          était, grisé et inerte : sur un formulaire d'une seule page — le cas
+          le plus courant — le répondant voyait donc une flèche de retour qui
+          ne menait nulle part, juste sous la dernière question. Un bouton
+          désactivé se justifie quand l'action redeviendra possible ; ici, elle
+          ne le redeviendra jamais.
+
+          L'alignement suit le réglage de l'auteur, et c'est la rangée entière
+          qui bascule : centrer l'envoi sans rien d'autre à sa gauche laisserait
+          un bouton pendu à droite d'un vide.
+        */}
+        <div
+          className={cn(
+            'flex items-center gap-3',
+            canGoBack ? 'justify-between' : submitAlignClass(settings.submit_align)
+          )}
+        >
+          {canGoBack && (
+            <button
+              type="button"
+              onClick={() => setPageIdx((i) => Math.max(0, i - 1))}
+              className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-text-primary transition hover:bg-bg-elevated"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {strings.previous}
+            </button>
+          )}
 
           <button
             type="submit"
@@ -271,10 +293,14 @@ export function PublicSectionsView({
             )}
           >
             {isLast ? (
-              isSubmitting ? 'Envoi...' : 'Envoyer'
+              isSubmitting ? (
+                strings.submitting
+              ) : (
+                submitLabel(settings.submit_label, strings)
+              )
             ) : (
               <>
-                Suivant
+                {strings.next}
                 <ArrowRight className="h-4 w-4" />
               </>
             )}

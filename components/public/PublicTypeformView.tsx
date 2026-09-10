@@ -17,6 +17,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { ArrowRight, Check } from 'lucide-react';
 import { toast } from '@/components/ui/Toast';
+import { submitAlignClass, submitLabel } from '@/lib/respondent-ui';
+import { useRespondentStrings } from './respondent-strings';
 
 interface Props {
   form: Form;
@@ -82,6 +84,12 @@ export function PublicTypeformView({
   const progress = total > 0 ? ((currentIdx + 1) / total) * 100 : 0;
   const isLast = currentIdx === total - 1;
 
+  /** Il n'y a un retour que s'il existe un écran derrière. */
+  const canGoBack = currentIdx > 0 || history.length > 0;
+
+  const strings = useRespondentStrings();
+  const settings = form.settings ?? {};
+
   // Validation de champ individuel — même règle que la validation finale et que
   // le serveur. Elle laissait auparavant passer un choix multiple vide (`[]`).
   const validateCurrentField = () => {
@@ -107,7 +115,7 @@ export function PublicTypeformView({
   const handleNext = async () => {
     // Validation du champ courant
     if (!validateCurrentField()) {
-      toast.error('Ce champ est obligatoire');
+      toast.error(strings.requiredField);
       return;
     }
 
@@ -130,7 +138,7 @@ export function PublicTypeformView({
         // Soumission finale immédiate
         const validation = validateRequiredFields();
         if (!validation.isValid) {
-          toast.error('Veuillez remplir tous les champs obligatoires');
+          toast.error(strings.requiredFields);
           return;
         }
         await onSubmit();
@@ -158,7 +166,7 @@ export function PublicTypeformView({
       // Soumission finale
       const validation = validateRequiredFields();
       if (!validation.isValid) {
-        toast.error('Veuillez remplir tous les champs obligatoires');
+        toast.error(strings.requiredFields);
         return;
       }
       await onSubmit();
@@ -306,7 +314,7 @@ export function PublicTypeformView({
   if (!currentField) {
     return (
       <div className={cn(screenClass, 'flex items-center justify-center')}>
-        <p>Aucune question disponible</p>
+        <p>{strings.noQuestions}</p>
       </div>
     );
   }
@@ -366,7 +374,7 @@ export function PublicTypeformView({
                       <span className="text-red-500 ml-2" aria-hidden="true">
                         *
                       </span>
-                      <span className="sr-only"> (obligatoire)</span>
+                      <span className="sr-only"> {strings.required}</span>
                     </>
                   )}
                 </h2>
@@ -434,16 +442,28 @@ export function PublicTypeformView({
                 </div>
               )}
 
-              {/* Boutons de navigation */}
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleBack}
-                  disabled={currentIdx === 0 && history.length === 0}
-                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-bg-surface px-6 py-3 text-lg font-medium transition hover:border-border-strong disabled:opacity-50 disabled:cursor-not-allowed text-text-primary"
-                >
-                  Retour
-                </button>
+              {/*
+                Boutons de navigation.
+
+                Le retour n'apparaît que s'il y a un écran derrière. Il était
+                affiché grisé sur la première question : une flèche de retour
+                inerte, sous la toute première chose qu'on lit.
+              */}
+              <div
+                className={cn(
+                  'flex items-center gap-3',
+                  canGoBack ? '' : submitAlignClass(settings.submit_align)
+                )}
+              >
+                {canGoBack && (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-bg-surface px-6 py-3 text-lg font-medium text-text-primary transition hover:border-border-strong"
+                  >
+                    {strings.previous}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleNext}
@@ -455,16 +475,16 @@ export function PublicTypeformView({
                 >
                   {isLast ? (
                     isSubmitting ? (
-                      'Envoi...'
+                      strings.submitting
                     ) : (
                       <>
                         <Check className="h-5 w-5" />
-                        Envoyer
+                        {submitLabel(settings.submit_label, strings)}
                       </>
                     )
                   ) : (
                     <>
-                      Suivant
+                      {strings.next}
                       <ArrowRight className="h-5 w-5" />
                     </>
                   )}

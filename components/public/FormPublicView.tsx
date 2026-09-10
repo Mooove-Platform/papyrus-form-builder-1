@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { Form } from '@/types';
 import { toast } from '@/components/ui/Toast';
+import { RespondentStringsProvider } from './respondent-strings';
 import { FormSlugProvider } from '@/lib/hooks/useFormSlug';
 import { useFormScore } from '@/lib/hooks/useFormScore';
 import { useEmbedBridge } from '@/lib/hooks/useEmbedBridge';
@@ -59,6 +60,17 @@ export function FormPublicView({ form, embed, accessToken, preview, mobile }: Pr
 
   const settings = form.settings ?? {};
   const language = form.default_language || 'fr';
+
+  /**
+   * La langue de l'interface, distincte de celle des reponses.
+   *
+   * `language` sert a etiqueter la reponse enregistree. Celle-ci regle les mots
+   * que Papyrus ajoute — boutons, compteurs, messages. `respondent_language`
+   * existait dans les reglages, documente comme reglant exactement cela, et
+   * n'etait lu nulle part : un formulaire redige en anglais s'envoyait avec un
+   * bouton « Envoyer ».
+   */
+  const interfaceLanguage = settings.respondent_language || form.default_language || 'fr';
 
   // Hook pour gérer le scoring en temps réel
   const {
@@ -285,6 +297,7 @@ export function FormPublicView({ form, embed, accessToken, preview, mobile }: Pr
   // Page de remerciement après soumission
   if (isSubmitted) {
     return (
+      <RespondentStringsProvider language={interfaceLanguage}>
       <ThankYouPage
         form={form}
         submissionId={submissionId}
@@ -293,10 +306,12 @@ export function FormPublicView({ form, embed, accessToken, preview, mobile }: Pr
         scoreResult={showScoreToRespondent ? (scoreResult || undefined) : undefined}
         embed={embed}
       />
+      </RespondentStringsProvider>
     );
   }
 
   return (
+    <RespondentStringsProvider language={interfaceLanguage}>
     <FormSlugProvider slug={form.slug}>
     <div className={embed?.enabled ? 'w-full' : 'min-h-screen'} style={containerStyle}>
       {settings.progress_bar && (
@@ -313,6 +328,7 @@ export function FormPublicView({ form, embed, accessToken, preview, mobile }: Pr
       )}
     </div>
     </FormSlugProvider>
+    </RespondentStringsProvider>
   );
 }
 

@@ -110,6 +110,19 @@ async function setDisplayMode(page: Page, mode: string) {
 test.describe('Revue complète', () => {
   test.skip(!session, 'E2E_SESSION_FILE non défini');
 
+  /**
+   * En série, tout le fichier.
+   *
+   * Presque chaque test écrit dans le MÊME formulaire d'essai : mode
+   * d'affichage, langue, thème, réglages du bouton. En parallèle, l'un défait
+   * ce que l'autre vient de poser, et l'échec désigne alors la mauvaise
+   * coupable — on a corrigé deux fois un défaut qui n'existait pas.
+   *
+   * Des blocs `serial` imbriqués ne suffisaient pas : ils ordonnent leurs
+   * propres tests, mais deux blocs restent parallèles entre eux.
+   */
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ context, baseURL }) => {
     if (!session) return;
     const origin = new URL(baseURL ?? 'http://localhost:3100').origin;
@@ -359,6 +372,124 @@ test.describe('Revue complète', () => {
       expect(shown!.hauteur, 'bandeau à la hauteur de l’image, rien de rogné').toBeCloseTo(1, 1);
     });
 
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 1 quater. Les boutons du répondant
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Trois défauts que ces tests empêchent de revenir.
+   *
+   * 1. **Un bouton « Précédent » là où il n'y a pas de précédent.** Il était
+   *    affiché grisé sur la première page. Sur un formulaire d'une seule page —
+   *    le cas le plus courant — le répondant voyait donc une flèche de retour
+   *    inerte sous la dernière question.
+   *
+   * 2. **Le bouton d'envoi écrit en dur, en français.** Le réglage « Langue »
+   *    promettait de régler « les libellés que Papyrus ajoute lui-même », et ne
+   *    réglait rien : un formulaire rédigé en anglais s'envoyait avec un bouton
+   *    « Envoyer » et un compteur « 0/2500 caractères ».
+   *
+   * 3. **Le bouton collé à droite**, sans moyen de le déplacer ni de le nommer.
+   */
+  test.describe('Boutons du répondant', () => {
+    test.describe.configure({ mode: 'serial' });
+
+    /** Où se pose un bouton dans sa rangée. */
+    async function placement(page: Page, name: RegExp) {
+      return page.evaluate((pattern) => {
+        const regex = new RegExp(pattern, 'i');
+        const button = [...document.querySelectorAll('button')].find((element) =>
+          regex.test((element.textContent ?? '').trim())
+        );
+        if (!button?.parentElement) return null;
+
+        const row = button.parentElement.getBoundingClientRect();
+        const rect = button.getBoundingClientRect();
+        const left = rect.left - row.left;
+        const right = row.right - rect.right;
+
+        if (Math.abs(left - right) < 12) return 'center';
+        return left < right ? 'left' : 'right';
+      }, name.source);
+    }
+
+    test('aucun bouton de retour quand il n’y a pas de page précédente', async ({ page }) => {
+      test.skip(!SLUG, 'E2E_AUDIT_SLUG non défini');
+
+      await patchForm(page, { display_mode: 'sections', status: 'published' });
+      await page.goto(`/f/${SLUG}`);
+      await page.waitForTimeout(1500);
+
+      // Ni affiché, ni désactivé : absent. Un bouton grisé se justifie quand
+      // l'action redeviendra possible ; celle-ci ne le redeviendra jamais.
+      await expect(page.getByRole('button', { name: /^(Précédent|Back|Atrás)$/ })).toHaveCount(0);
+
+      // Et « une question à la fois », qui avait le même défaut sur son premier
+      // écran.
+      await patchForm(page, { display_mode: 'typeform' });
+      await page.goto(`/f/${SLUG}`);
+      await page.waitForTimeout(1500);
+      await expect(page.getByRole('button', { name: /^(Retour|Back|Atrás)$/ })).toHaveCount(0);
+    });
+
+    test('l’interface suit la langue du formulaire', async ({ page }) => {
+      test.skip(!SLUG, 'E2E_AUDIT_SLUG non défini');
+
+      await patchForm(page, {
+        display_mode: 'sections',
+        default_language: 'en',
+        status: 'published'
+      });
+      await page.goto(`/f/${SLUG}`);
+      await page.waitForTimeout(1500);
+
+      await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Suivant' })).toHaveCount(0);
+
+      await patchForm(page, { default_language: 'fr' });
+      await page.goto(`/f/${SLUG}`);
+      await page.waitForTimeout(1500);
+
+      await expect(page.getByRole('button', { name: 'Suivant' })).toBeVisible();
+    });
+
+    test('le bouton d’envoi porte le texte et la position choisis', async ({ page }) => {
+      test.skip(!SLUG, 'E2E_AUDIT_SLUG non défini');
+
+      // Mode « tout sur une page » : le bouton d'envoi y est seul, donc
+      // atteignable sans répondre aux questions obligatoires des pages
+      // précédentes.
+      await patchForm(page, {
+        display_mode: 'scroll',
+        default_language: 'en',
+        status: 'published',
+        settings: { submit_align: 'center', submit_label: 'Send my feedback' }
+      });
+      await page.goto(`/f/${SLUG}`);
+      await page.waitForTimeout(1500);
+
+      const custom = page.getByRole('button', { name: 'Send my feedback' });
+      await expect(custom).toBeVisible();
+      expect(await placement(page, /Send my feedback/)).toBe('center');
+
+      // Sans libellé écrit à la main, c'est le mot de la langue qui revient.
+      await patchForm(page, { settings: { submit_align: 'left' } });
+      await page.goto(`/f/${SLUG}`);
+      await page.waitForTimeout(1500);
+
+      await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible();
+      expect(await placement(page, /Submit/)).toBe('left');
+
+      // Et le réglage historique — à droite — reste le défaut.
+      await patchForm(page, { default_language: 'fr', settings: {} });
+      await page.goto(`/f/${SLUG}`);
+      await page.waitForTimeout(1500);
+
+      await expect(page.getByRole('button', { name: 'Envoyer' })).toBeVisible();
+      expect(await placement(page, /Envoyer/)).toBe('right');
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════════════

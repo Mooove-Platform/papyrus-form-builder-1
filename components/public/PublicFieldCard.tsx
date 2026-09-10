@@ -10,6 +10,7 @@ import {
   labelsSingleControl
 } from '@/lib/field-labelling';
 import { getFieldIcon, isIconVisible } from '@/lib/field-icons';
+import { useRespondentStrings } from './respondent-strings';
 import { isVisibleToRespondent } from '@/lib/public-fields';
 import { quantityKey, readQuantityMap, resolvePricing } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
@@ -191,6 +192,7 @@ function PublicFieldQuestion({
   field: Field;
   theme: Form['theme'];
 }) {
+  const strings = useRespondentStrings();
   const style = { ...theme.field_style, ...field.style };
   const isRespondentUpload =
     ['file', 'image', 'video'].includes(field.type) &&
@@ -256,7 +258,7 @@ function PublicFieldQuestion({
               </span>
             )}
             {/* « obligatoire » se dit, l'astérisque ne s'entend pas. */}
-            {field.required && <span className="sr-only"> (obligatoire)</span>}
+            {field.required && <span className="sr-only"> {strings.required}</span>}
           </span>
         </span>
       </Title>

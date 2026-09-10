@@ -9,6 +9,8 @@ import { ScoreDisplay } from '@/components/respondent/ScoreDisplay';
 import { PublicFieldCard } from './PublicFieldCard';
 import { PricingSummary } from './PricingSummary';
 import { cn } from '@/lib/utils';
+import { submitAlignClass, submitLabel } from '@/lib/respondent-ui';
+import { useRespondentStrings } from './respondent-strings';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '@/components/ui/Toast';
 
@@ -45,6 +47,9 @@ export function PublicScrollView({
   embed,
   mobile
 }: Props) {
+  const strings = useRespondentStrings();
+  const settings = form.settings ?? {};
+
   const fields = form.fields?.filter(f => visibleFields.has(f.id)) || [];
   const hasInputs = fields.some(
     f => f.type !== 'image' && f.type !== 'video' && f.type !== 'statement'
@@ -150,7 +155,7 @@ export function PublicScrollView({
 
       {/* Bouton de soumission */}
       {hasInputs && (
-        <div className="mt-8 flex justify-end">
+        <div className={cn('mt-8 flex', submitAlignClass(settings.submit_align))}>
           <button
             type="submit"
             disabled={isSubmitting}
@@ -159,7 +164,7 @@ export function PublicScrollView({
               'bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed'
             )}
           >
-            {isSubmitting ? 'Envoi...' : 'Envoyer'}
+            {isSubmitting ? strings.submitting : submitLabel(settings.submit_label, strings)}
           </button>
         </div>
       )}
