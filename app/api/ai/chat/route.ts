@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { createAdminClient, createClient } from '@/lib/supabase/server';
 import { rateLimit } from '@/lib/rate-limit';
+import { R2_PUBLIC_BASE_URL } from '@/lib/env';
 import { recordAiUsage, resolveAiRuntime } from '@/lib/ai/settings';
 import { runAgentTurn, type AgentEvent } from '@/lib/ai/agent';
 import type { ToolContext } from '@/lib/ai/tools';
@@ -27,6 +28,21 @@ export const maxDuration = 300;
 
 const BodySchema = z.object({
   message: z.string().min(1).max(8000),
+  /**
+   * L'image jointe au message, telle que `/api/ai/document` l'a déposée.
+   *
+   * Le domaine est imposé ici et revérifié dans l'outil `set_banner` : une
+   * adresse quelconque envoyée par le navigateur deviendrait sinon une image
+   * que le modèle regarde — et, s'il la repose en bannière, que tous les
+   * répondants chargent depuis un serveur qui n'est pas le nôtre.
+   */
+  attachment_url: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith(`${R2_PUBLIC_BASE_URL}/`) && !url.includes('..'))
+    .nullable()
+    .optional(),
+  attachment_name: z.string().max(255).nullable().optional(),
   team_id: z.string().uuid(),
   project_id: z.string().uuid().nullable().optional(),
   form_id: z.string().uuid().nullable().optional(),
@@ -171,7 +187,15 @@ export async function POST(request: NextRequest) {
           runtime: resolved.runtime,
           context,
           history,
-          message: body.message,
+          message: body.attachment_url
+            ? // L'adresse est répétée dans le texte, et pas seulement passée en
+              // image : c'est elle que le modèle doit rendre à `set_banner`, et
+              // il ne peut pas la lire dans le pixel qu'il regarde.
+              `${body.message}\n\n[Image jointe : ${body.attachment_name ?? 'image'} — adresse publique ${body.attachment_url}]`
+            : body.message,
+          attachment: body.attachment_url
+            ? { url: body.attachment_url, filename: body.attachment_name ?? 'image' }
+            : null,
           userName
         })) {
           if (event.type === 'text') answer += event.delta;

@@ -22,6 +22,7 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
   const [localBannerX, setLocalBannerX] = useState(theme.banner_position_x ?? 50);
   const [localBannerY, setLocalBannerY] = useState(theme.banner_position_y ?? 50);
   const [localLogoSize, setLocalLogoSize] = useState(theme.logo_size ?? 1);
+  const [localHeight, setLocalHeight] = useState(theme.banner_height ?? 160);
 
   useEffect(() => {
     setLocalBannerScale(theme.banner_scale ?? 1);
@@ -39,11 +40,30 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
     setLocalLogoSize(theme.logo_size ?? 1);
   }, [theme.logo_size]);
 
+  useEffect(() => {
+    setLocalHeight(theme.banner_height ?? 160);
+  }, [theme.banner_height]);
+
   /** L'image part directement vers Cloudflare R2 ; le thème ne garde que l'URL publique. */
   async function handleImageUpload(file: File) {
     const url = await uploadImage(file);
     if (!url) return;
-    onChange(selectedElement === 'banner' ? { banner_url: url } : { logo_url: url });
+
+    if (selectedElement !== 'banner') {
+      onChange({ logo_url: url });
+      return;
+    }
+
+    /**
+     * Une bannière qu'on téléverse arrive en « Voir entière ».
+     *
+     * Le défaut d'avant était « Remplir » : une bannière déjà dessinée — un
+     * visuel large, avec son titre et ses logos — entrait donc rognée en haut
+     * et en bas, et il fallait la recadrer pour retrouver ce qu'on venait
+     * d'envoyer. Montrer l'image entière ne demande aucun réglage et ne se
+     * trompe jamais ; « Remplir » reste à un clic pour les photos.
+     */
+    onChange({ banner_url: url, banner_fit: 'contain' });
   }
 
   if (selectedElement === 'banner') {
@@ -116,28 +136,26 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
 
           {theme.banner_url && (
             <>
-              <Section title="Mode d'affichage">
-                <div className="grid grid-cols-3 gap-1.5">
+              <Section title="Mode d’affichage">
+                {/*
+                  Deux modes, et non trois. « Toute largeur » figurait ici comme un
+                  troisième mode alors que c’est une largeur, pas un cadrage : la
+                  choisir forçait « Remplir » en douce, et le cadrage patiemment
+                  réglé repartait à zéro. Elle a maintenant son propre
+                  interrupteur, où elle se combine avec l’un ou l’autre mode.
+                */}
+                <div className="grid grid-cols-2 gap-1.5">
                   {([
-                    { value: 'cover', label: 'Remplir', hint: 'peut rogner' },
-                    { value: 'contain', label: 'Voir entière', hint: 'sans rogner' },
-                    { value: 'full-width', label: 'Toute largeur', hint: 'plein écran' }
+                    { value: 'contain', label: 'Voir entière', hint: 'rien n’est rogné' },
+                    { value: 'cover', label: 'Remplir', hint: 'peut rogner' }
                   ] as const).map((mode) => (
                     <button
                       key={mode.value}
                       type="button"
-                      onClick={() => {
-                        if (mode.value === 'full-width') {
-                          onChange({ banner_fit: 'cover', banner_full_width: true });
-                        } else {
-                          onChange({ banner_fit: mode.value, banner_full_width: false });
-                        }
-                      }}
+                      onClick={() => onChange({ banner_fit: mode.value })}
                       className={cn(
                         'rounded-md border p-2 text-left transition',
-                        (mode.value === 'full-width'
-                          ? theme.banner_full_width
-                          : (theme.banner_fit ?? 'cover') === mode.value && !theme.banner_full_width)
+                        (theme.banner_fit ?? 'cover') === mode.value
                           ? 'border-accent bg-accent/5 text-text-primary'
                           : 'border-border-strong text-text-secondary hover:border-accent'
                       )}
@@ -147,80 +165,140 @@ export function FormHeaderSettings({ theme, selectedElement, onChange }: Props) 
                     </button>
                   ))}
                 </div>
+
+                <label className="mt-2 flex cursor-pointer items-start justify-between gap-3 rounded-md border border-border-strong p-2.5 transition hover:border-accent">
+                  <span>
+                    <span className="block text-xs font-medium text-text-primary">
+                      Toute la largeur
+                    </span>
+                    <span className="block text-[10px] text-text-tertiary">
+                      Bord à bord, sans marge ni coins arrondis
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={theme.banner_full_width === true}
+                    onChange={(e) => onChange({ banner_full_width: e.target.checked })}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
+                  />
+                </label>
               </Section>
 
-              <Section title="Taille et position de l'image">
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                      <span>Zoom</span>
-                      <span className="font-mono text-text-tertiary">{Math.round(localBannerScale * 100)}%</span>
-                    </label>
-                    <input
-                      type="range"
-                      min={0.05}
-                      max={3}
-                      step={0.05}
-                      value={localBannerScale}
-                      onChange={(e) => setLocalBannerScale(Number(e.target.value))}
-                      onMouseUp={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
-                      onTouchEnd={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
-                      onKeyUp={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
-                      className="w-full accent-accent"
-                    />
-                  </div>
+              {/*
+                Rien à cadrer en « Voir entière » : le bandeau prend la hauteur de
+                l’image. Afficher malgré tout un zoom et deux positions laisserait
+                croire qu’ils agissent — c’est exactement ce qui donnait
+                l’impression que la bannière ne répondait pas.
+              */}
+              {(theme.banner_fit ?? 'cover') === 'contain' ? (
+                <Section title="Cadrage">
+                  <p className="text-xs leading-relaxed text-text-tertiary">
+                    L’image est montrée entière, telle qu’elle a été dessinée. Le
+                    bandeau prend sa hauteur : il n’y a rien à régler, et l’aperçu
+                    comme le formulaire publié afficheront exactement ceci.
+                  </p>
+                </Section>
+              ) : (
+                <Section title="Hauteur et cadrage">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
+                        <span>Hauteur du bandeau</span>
+                        <span className="font-mono text-text-tertiary">{localHeight} px</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={80}
+                        max={480}
+                        step={8}
+                        value={localHeight}
+                        onChange={(e) => setLocalHeight(Number(e.target.value))}
+                        onMouseUp={(e) => onChange({ banner_height: Number(e.currentTarget.value) })}
+                        onTouchEnd={(e) => onChange({ banner_height: Number(e.currentTarget.value) })}
+                        onKeyUp={(e) => onChange({ banner_height: Number(e.currentTarget.value) })}
+                        className="w-full accent-accent"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                      <span>Position horizontale</span>
-                      <span className="font-mono text-text-tertiary">{localBannerX}%</span>
-                    </label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={localBannerX}
-                      onChange={(e) => setLocalBannerX(Number(e.target.value))}
-                      onMouseUp={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
-                      onTouchEnd={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
-                      onKeyUp={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
-                      className="w-full accent-accent"
-                    />
+                    <div>
+                      <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
+                        <span>Zoom</span>
+                        <span className="font-mono text-text-tertiary">
+                          {Math.round(localBannerScale * 100)}%
+                        </span>
+                      </label>
+                      <input
+                        type="range"
+                        min={0.05}
+                        max={3}
+                        step={0.05}
+                        value={localBannerScale}
+                        onChange={(e) => setLocalBannerScale(Number(e.target.value))}
+                        onMouseUp={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
+                        onTouchEnd={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
+                        onKeyUp={(e) => onChange({ banner_scale: Number(e.currentTarget.value) })}
+                        className="w-full accent-accent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
+                        <span>Position horizontale</span>
+                        <span className="font-mono text-text-tertiary">{localBannerX}%</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={localBannerX}
+                        onChange={(e) => setLocalBannerX(Number(e.target.value))}
+                        onMouseUp={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
+                        onTouchEnd={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
+                        onKeyUp={(e) => onChange({ banner_position_x: Number(e.currentTarget.value) })}
+                        className="w-full accent-accent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
+                        <span>Position verticale</span>
+                        <span className="font-mono text-text-tertiary">{localBannerY}%</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={localBannerY}
+                        onChange={(e) => setLocalBannerY(Number(e.target.value))}
+                        onMouseUp={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
+                        onTouchEnd={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
+                        onKeyUp={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
+                        className="w-full accent-accent"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                      <span>Position verticale</span>
-                      <span className="font-mono text-text-tertiary">{localBannerY}%</span>
-                    </label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={localBannerY}
-                      onChange={(e) => setLocalBannerY(Number(e.target.value))}
-                      onMouseUp={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
-                      onTouchEnd={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
-                      onKeyUp={(e) => onChange({ banner_position_y: Number(e.currentTarget.value) })}
-                      className="w-full accent-accent"
-                    />
-                  </div>
+                </Section>
+              )}
+
+              {/* Réinitialiser n’a de sens que là où l’on cadre. */}
+              {(theme.banner_fit ?? 'cover') === 'cover' && (
+                <div className="flex justify-end pt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      onChange({
+                        banner_scale: 1,
+                        banner_position_x: 50,
+                        banner_position_y: 50,
+                        banner_height: 160
+                      })
+                    }
+                  >
+                    Réinitialiser le cadrage
+                  </Button>
                 </div>
-              </Section>
-
-              {/* Bouton Réinitialiser */}
-              <div className="flex justify-end pt-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onChange({
-                    banner_scale: 1,
-                    banner_position_x: 50,
-                    banner_position_y: 50,
-                  })}
-                >
-                  Réinitialiser le cadrage
-                </Button>
-              </div>
+              )}
             </>
           )}
         </div>

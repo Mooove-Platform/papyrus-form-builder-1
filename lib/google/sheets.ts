@@ -29,6 +29,27 @@ async function call<T>(url: string, accessToken: string, init?: RequestInit): Pr
 
     const detail = body?.error?.message ?? `Erreur Google (HTTP ${response.status})`;
 
+    /**
+     * Le cas qu'on ne reconnaissait pas : l'API n'est pas activée.
+     *
+     * Google répond 403 avec `SERVICE_DISABLED` quand le projet Cloud n'a
+     * jamais activé Sheets ou Drive. Ce n'est ni un problème de compte ni un
+     * problème de droits sur le document : la connexion est bonne, le
+     * consentement est donné, et pourtant le premier appel échoue.
+     *
+     * On recrachait alors le message de Google tel quel — trois lignes
+     * d'anglais, un numéro de projet et une URL de console — dans une petite
+     * bulle qui les tronquait. Personne ne pouvait y lire quoi faire.
+     */
+    if (response.status === 403 && isServiceDisabled(body, detail)) {
+      throw new GoogleApiError(
+        'L’API Google Sheets n’est pas activée sur le projet Google Cloud de Papyrus. ' +
+          'Un administrateur doit l’activer dans la console Google Cloud (Bibliothèque → Google Sheets API, ' +
+          'puis Google Drive API), attendre une minute, et réessayer.',
+        403
+      );
+    }
+
     if (response.status === 401 || response.status === 403) {
       throw new GoogleApiError(
         `Google a refusé l'accès : ${detail}`,
@@ -49,6 +70,24 @@ async function call<T>(url: string, accessToken: string, init?: RequestInit): Pr
   }
 
   return (await response.json()) as T;
+}
+
+/**
+ * Reconnaît le 403 « API non activée ».
+ *
+ * Deux marqueurs plutôt qu'un : Google renvoie `status: 'PERMISSION_DENIED'`
+ * avec la raison dans le corps, et la formulation du message a déjà changé
+ * plusieurs fois. Le `reason` structuré est le signal fiable ; la phrase reste
+ * un filet.
+ */
+function isServiceDisabled(
+  body: { error?: { message?: string; status?: string; details?: unknown[] } } | null,
+  detail: string
+): boolean {
+  const reasons = (body?.error?.details ?? []) as { reason?: string }[];
+  if (reasons.some((entry) => entry?.reason === 'SERVICE_DISABLED')) return true;
+
+  return /has not been used in project|is disabled|accessNotConfigured/i.test(detail);
 }
 
 export interface SpreadsheetSummary {

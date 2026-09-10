@@ -594,6 +594,13 @@ export interface FormTheme {
   banner_position_y?: number; // Position verticale (0-100)
   banner_scale?: number; // Facteur de zoom (0.5-3, défaut: 1)
   banner_full_width?: boolean; // Bannière sur toute la largeur du viewport
+  /**
+   * Hauteur du bandeau en pixels — uniquement en mode « Remplir ».
+   *
+   * En mode « Voir entière » le bandeau prend la hauteur de l'image : c'est ce
+   * qui permet de ne rien rogner sans avoir à régler quoi que ce soit.
+   */
+  banner_height?: number;
   // Arrière-plan détaillé
   bg_type?: BackgroundType;
   bg_color?: string;

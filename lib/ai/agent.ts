@@ -56,6 +56,16 @@ export interface AgentTurn {
   history: { role: 'user' | 'assistant'; content: string }[];
   message: string;
   userName: string;
+  /**
+   * Une image jointe au message, déjà déposée sur R2.
+   *
+   * Elle est transmise au modèle telle quelle, en `input_image` : il la
+   * **regarde**. C'est ce qui permet de lui envoyer une bannière et de lui
+   * dire « pose-la en en-tête et fais-moi un thème avec ses couleurs » — il
+   * lit les couleurs sur l'image, il ne les devine pas depuis un nom de
+   * fichier.
+   */
+  attachment?: { url: string; filename: string } | null;
 }
 
 /**
@@ -77,6 +87,12 @@ export function agentInstructions(ctx: ToolContext): string {
     '· Un formulaire d’inscription commence par ce qui identifie la personne (nom, e-mail), puis ce qu’elle choisit, puis le reste.',
     '· Si une demande est ambiguë au point de changer la structure, pose UNE question et arrête-toi. Sinon, construis.',
     '· Quand tu as fini, dis en une ou deux phrases ce que tu viens de faire. Ne récapitule pas question par question : la personne voit le formulaire.',
+    '',
+    'Images jointes :',
+    '· Quand une image accompagne le message, tu la REGARDES et tu t’en sers. Son adresse publique t’est donnée avec elle : c’est celle-là qu’il faut passer à set_banner, jamais une adresse inventée.',
+    '· « Mets ça en bannière » = set_banner avec cette adresse. Laisse le mode « contain » si l’image est une bannière déjà composée (un visuel large, avec son titre) : on la montre entière plutôt que rognée.',
+    '· « Fais un thème avec ces couleurs » = tu relèves sur l’image la couleur dominante, une couleur d’accent lisible et un fond clair, puis tu appelles set_theme. Vérifie le contraste : le texte du formulaire est foncé, un fond doit donc rester clair.',
+    '· Tu peux enchaîner les deux sans redemander : poser la bannière et accorder le thème est un seul geste attendu.',
     '',
     ctx.formId
       ? `Formulaire ouvert : ${ctx.formId}.`
@@ -100,7 +116,18 @@ export async function* runAgentTurn(turn: AgentTurn): AsyncGenerator<AgentEvent>
   // tableau qu'on construit à la main.
   const input: Record<string, unknown>[] = [
     ...turn.history.map((entry) => ({ role: entry.role, content: entry.content })),
-    { role: 'user', content: turn.message }
+    turn.attachment
+      ? {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: turn.message },
+            // `detail: 'high'` : on lui demande de lire une maquette — des
+            // couleurs, un logo, parfois du texte fin. En basse définition il
+            // rendrait une teinte moyenne et des titres devinés.
+            { type: 'input_image', image_url: turn.attachment.url, detail: 'high' }
+          ]
+        }
+      : { role: 'user', content: turn.message }
   ];
 
   let inputTokens = 0;

@@ -6,17 +6,27 @@ import { PDFParse } from 'pdf-parse';
 
 import { createClient } from '@/lib/supabase/server';
 import { rateLimit } from '@/lib/rate-limit';
+import { MAX_IMAGE_BYTES, putObject } from '@/lib/storage/r2';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
- * Extraction du texte d'un brouillon — PDF, DOCX, TXT, Markdown.
+ * Ce qu'on joint à l'assistant — un brouillon à lire, ou une image à regarder.
  *
- * Elle ne construit rien. Elle rend du texte, que l'assistant reçoit comme s'il
- * avait été tapé : c'est le planificateur qui décide ensuite quels outils
- * appeler.
+ * **Deux natures de pièce jointe, et c'est le point.** Un PDF, un DOCX, un TXT
+ * rendent du texte, que l'assistant reçoit comme s'il avait été tapé. Une
+ * image, elle, est déposée sur R2 et son adresse est rendue : l'assistant la
+ * REGARDE. C'est ce qui permet de lui envoyer une bannière et de lui dire
+ * « pose-la en en-tête et accorde le thème à ses couleurs ».
+ *
+ * Avant, cette route refusait toute image — « Format non pris en charge » —
+ * alors que c'est le fichier qu'on a le plus envie de lui donner. Le sélecteur
+ * de fichiers ne les proposait même pas.
+ *
+ * Elle ne construit rien dans les deux cas : c'est le planificateur qui décide
+ * ensuite quels outils appeler.
  *
  * C'est tout ce qui reste de l'ancienne route `/api/generate-form`, qui
  * envoyait ce même texte à un modèle en lui demandant un objet JSON complet et
@@ -78,6 +88,66 @@ export async function POST(request: Request) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const name = file.name.toLowerCase();
 
+  /**
+   * Une image part sur R2 et revient sous forme d'adresse.
+   *
+   * Elle ne transite pas en base64 dans la conversation : une bannière de deux
+   * mégaoctets encodée pèserait presque trois, à chaque tour, et l'assistant
+   * doit de toute façon pouvoir passer cette adresse à `set_banner` — donc
+   * elle doit être publique et durable. R2 remplit les deux rôles d'un coup.
+   */
+  const imageMime = IMAGE_MIME[extensionOf(name)] ?? (file.type.startsWith('image/') ? file.type : null);
+
+  if (imageMime) {
+    if (imageMime === 'image/svg+xml') {
+      // Un SVG est un document exécutable : il peut porter du script, et le
+      // modèle ne saurait pas le lire de toute façon. Il reste accepté comme
+      // bannière par le téléversement du constructeur, pas ici.
+      return NextResponse.json(
+        {
+          error:
+            'Le SVG ne peut pas être regardé par l’assistant. Exportez-le en PNG ou en JPG, ou posez-le en bannière depuis le panneau Bannière.'
+        },
+        { status: 400 }
+      );
+    }
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      return NextResponse.json(
+        { error: `Image trop volumineuse (maximum ${MAX_IMAGE_BYTES / 1024 / 1024} Mo).` },
+        { status: 413 }
+      );
+    }
+
+    try {
+      const { publicUrl } = await putObject(
+        buffer,
+        imageMime,
+        extensionOf(name) || 'png',
+        'assistant'
+      );
+
+      return NextResponse.json({ kind: 'image', url: publicUrl, filename: file.name });
+    } catch (error) {
+      console.error('Dépôt de l’image de l’assistant échoué:', error);
+
+      // Une variable R2 absente n'est pas une panne passagère, et « réessayez »
+      // ferait réessayer indéfiniment. On distingue les deux : `getR2Config`
+      // nomme la variable manquante dans son message, et lui seul.
+      const misconfigured =
+        error instanceof Error && /R2_[A-Z_]+/.test(error.message);
+
+      return NextResponse.json(
+        {
+          error: misconfigured
+            ? 'Le stockage des images n’est pas configuré sur ce serveur. Prévenez un administrateur.'
+            : 'L’image n’a pas pu être déposée. Réessayez dans un instant.'
+        },
+        { status: misconfigured ? 503 : 502 }
+      );
+    }
+  }
+
   let text = '';
 
   try {
@@ -98,7 +168,10 @@ export async function POST(request: Request) {
       text = buffer.toString('utf-8');
     } else {
       return NextResponse.json(
-        { error: 'Format non pris en charge. Utilisez un PDF, un DOCX, un TXT ou un MD.' },
+        {
+          error:
+            'Format non pris en charge. Joignez une image (PNG, JPG, WebP), ou un document (PDF, DOCX, TXT, MD).'
+        },
         { status: 400 }
       );
     }
@@ -113,8 +186,17 @@ export async function POST(request: Request) {
   const cleaned = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 
   if (!cleaned) {
+    /**
+     * Le cas le plus fréquent, et le moins évident : un PDF exporté depuis un
+     * outil de design. Il est fait d'images, il ne contient pas une lettre de
+     * texte, et l'ancien message — « il faudrait le retaper » — était un
+     * conseil absurde quand ce qu'on voulait, justement, c'était le montrer.
+     */
     return NextResponse.json(
-      { error: 'Ce document ne contient aucun texte lisible. S’il est scanné, il faudrait le retaper.' },
+      {
+        error:
+          'Ce document ne contient aucun texte : c’est probablement un visuel. Exportez-le en PNG ou en JPG et joignez-le à nouveau — l’assistant saura alors le regarder.'
+      },
       { status: 422 }
     );
   }
@@ -128,6 +210,23 @@ export async function POST(request: Request) {
     characters: cleaned.length,
     filename: file.name
   });
+}
+
+/** Les images que le modèle sait regarder, par extension. */
+const IMAGE_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  avif: 'image/avif',
+  svg: 'image/svg+xml'
+};
+
+/** L'extension d'un nom de fichier, en minuscules et sans le point. */
+function extensionOf(filename: string): string {
+  const dot = filename.lastIndexOf('.');
+  return dot === -1 ? '' : filename.slice(dot + 1).toLowerCase();
 }
 
 async function readPdf(buffer: Buffer): Promise<string> {

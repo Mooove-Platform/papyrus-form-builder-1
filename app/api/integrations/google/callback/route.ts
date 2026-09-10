@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase/server';
 import { decodeState, exchangeCode, fetchGoogleEmail } from '@/lib/google/oauth';
 import { saveGoogleCredentials } from '@/lib/google/credentials';
+import { getBaseUrl } from '@/lib/base-url';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,9 +16,24 @@ export const dynamic = 'force-dynamic';
  * `state` légitime peut avoir été émis pour un utilisateur qui a depuis quitté
  * l'équipe.
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const url = new URL(request.url);
-  const origin = url.origin;
+
+  /**
+   * L'adresse publique de l'application, jamais celle vue par le serveur.
+   *
+   * Derrière le proxy d'Easypanel, Next écoute sur `0.0.0.0:80` et c'est cette
+   * adresse-là qu'il reconstruit dans `request.url`. La redirection de retour
+   * envoyait donc le navigateur sur `https://0.0.0.0:80/forms/…`, qui n'existe
+   * nulle part : `ERR_ADDRESS_INVALID`, juste après avoir accordé l'accès à
+   * Drive. Le compte Google était bel et bien rattaché — c'est le retour à
+   * l'écran qui échouait, ce qui donnait l'impression que la connexion avait
+   * raté.
+   *
+   * `getBaseUrl` existait déjà, écrit pour ce défaut précis, et corrigeait le
+   * retour de connexion. Cette route-ci ne l'avait jamais appelé.
+   */
+  const origin = getBaseUrl(request);
 
   const errorParam = url.searchParams.get('error');
   const code = url.searchParams.get('code');

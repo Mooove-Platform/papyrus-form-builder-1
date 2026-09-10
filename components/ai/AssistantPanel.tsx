@@ -49,6 +49,12 @@ interface Props {
   onCreated?: (ids: { project_id: string | null; form_id: string | null }) => void;
 }
 
+/** Une image jointe, déjà déposée sur R2 et pas encore envoyée. */
+interface Attachment {
+  url: string;
+  filename: string;
+}
+
 interface ToolTrace {
   name: string;
   ok: boolean;
@@ -61,6 +67,8 @@ interface Bubble {
   tools?: ToolTrace[];
   /** Instantané pris avant le lot — permet d'annuler ce tour. */
   versionId?: string | null;
+  /** L'image envoyée avec ce message, montrée dans le fil. */
+  attachment?: Attachment;
   error?: string;
 }
 
@@ -72,6 +80,8 @@ const TOOL_LABELS: Record<string, string> = {
   set_project_modules: 'Modules du projet',
   set_branding: 'Marque du projet',
   create_form: 'Création du formulaire',
+  set_banner: 'Bannière du formulaire',
+  set_theme: 'Couleurs du formulaire',
   rename_form: 'Titre du formulaire',
   open_form: 'Ouverture du formulaire',
   add_section: 'Ajout d’une section',
@@ -117,6 +127,7 @@ export function AssistantPanel({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [anchor, setAnchor] = useState({ projectId, formId });
   const [reading, setReading] = useState(false);
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
 
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -205,11 +216,16 @@ export function AssistantPanel({
     async (message: string) => {
       if (!message.trim() || busy) return;
 
+      // L'image part avec CE message et un seul : la garder accrochée la
+      // renverrait à chaque tour, facturée à chaque fois, pour rien.
+      const joined = attachment;
+
       setBusy(true);
       setDraft('');
+      setAttachment(null);
       setBubbles((previous) => [
         ...previous,
-        { role: 'user', content: message },
+        { role: 'user', content: message, attachment: joined ?? undefined },
         { role: 'assistant', content: '', tools: [] }
       ]);
 
@@ -230,6 +246,8 @@ export function AssistantPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message,
+            attachment_url: joined?.url ?? null,
+            attachment_name: joined?.filename ?? null,
             team_id: teamId,
             project_id: anchor.projectId,
             form_id: anchor.formId,
@@ -317,7 +335,7 @@ export function AssistantPanel({
         if (touchedForm) onChanged?.();
       }
     },
-    [anchor, busy, conversationId, onChanged, onCreated, teamId]
+    [anchor, attachment, busy, conversationId, onChanged, onCreated, teamId]
   );
 
   // Le message d'ouverture de l'assistant de création, envoyé une seule fois.
@@ -349,7 +367,23 @@ export function AssistantPanel({
       const response = await fetch('/api/ai/document', { method: 'POST', body });
       const data = await response.json().catch(() => null);
 
-      if (!response.ok) throw new Error(data?.error ?? 'Le document n’a pas pu être lu.');
+      if (!response.ok) throw new Error(data?.error ?? 'Le fichier n’a pas pu être lu.');
+
+      /**
+       * Une image ne remplit pas la zone de saisie : elle s'accroche au-dessus.
+       *
+       * Coller son adresse dans le texte obligerait à la relire pour écrire sa
+       * demande, et laisserait croire que l'assistant lit une adresse plutôt
+       * qu'il ne regarde une image. Accrochée, elle se voit, elle se retire
+       * d'un clic, et la phrase qu'on tape reste la sienne.
+       */
+      if (data.kind === 'image') {
+        setAttachment({ url: data.url, filename: data.filename });
+        setDraft((previous) =>
+          previous.trim() ? previous : 'Mets cette image en bannière et accorde le thème à ses couleurs.'
+        );
+        return;
+      }
 
       if (data.truncated) {
         toast.warning(
@@ -361,7 +395,7 @@ export function AssistantPanel({
         `Voici un brouillon de formulaire (${data.filename}). Construis-le.\n\n${data.text}`
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Le document n’a pas pu être lu.');
+      toast.error(error instanceof Error ? error.message : 'Le fichier n’a pas pu être lu.');
     } finally {
       setReading(false);
       if (fileInput.current) fileInput.current.value = '';
@@ -425,11 +459,38 @@ export function AssistantPanel({
       </div>
 
       <div className="border-t border-border p-3">
+        {/* L’image accrochée, visible tant qu’elle n’est pas partie. Sans elle
+            à l’écran, on ne saurait pas si le fichier a bien été pris. */}
+        {attachment && (
+          <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-border bg-bg-base p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={attachment.url}
+              alt=""
+              className="h-10 w-16 shrink-0 rounded-sm border border-border object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-text-primary">
+                {attachment.filename}
+              </p>
+              <p className="text-[11px] text-text-tertiary">Jointe au prochain message</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAttachment(null)}
+              className="shrink-0 rounded-md p-1 text-text-tertiary transition-colors hover:bg-bg-elevated hover:text-text-primary"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+              <span className="sr-only">Retirer l’image</span>
+            </button>
+          </div>
+        )}
+
         <div className="flex items-end gap-2 rounded-xl border border-border bg-bg-base p-2 focus-within:border-border-strong">
           <input
             ref={fileInput}
             type="file"
-            accept=".pdf,.docx,.txt,.md,.rtf"
+            accept="image/png,image/jpeg,image/webp,image/gif,image/avif,.pdf,.docx,.txt,.md,.rtf"
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -438,7 +499,7 @@ export function AssistantPanel({
           />
           <button
             type="button"
-            title="Partir d’un brouillon (PDF, DOCX, TXT)"
+            title="Joindre une image ou un brouillon (PNG, JPG, PDF, DOCX, TXT)"
             disabled={busy || reading}
             onClick={() => fileInput.current?.click()}
             className="shrink-0 rounded-lg p-2 text-text-tertiary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40"
@@ -448,7 +509,7 @@ export function AssistantPanel({
             ) : (
               <FileUp className="h-4 w-4" aria-hidden />
             )}
-            <span className="sr-only">Joindre un brouillon</span>
+            <span className="sr-only">Joindre une image ou un brouillon</span>
           </button>
 
           <button
@@ -588,7 +649,15 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
 function MessageBubble({ bubble, onUndo }: { bubble: Bubble; onUndo?: () => void }) {
   if (bubble.role === 'user') {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1.5">
+        {bubble.attachment && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={bubble.attachment.url}
+            alt={bubble.attachment.filename}
+            className="max-w-[85%] rounded-xl border border-border"
+          />
+        )}
         <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-mooove-navy px-3.5 py-2.5 text-sm text-mooove-ice">
           {bubble.content}
         </p>

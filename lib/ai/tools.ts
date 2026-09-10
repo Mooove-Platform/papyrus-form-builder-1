@@ -6,6 +6,7 @@ import type { createClient } from '@/lib/supabase/server';
 import { DEFAULT_PROJECT_INVOICING, DEFAULT_PROJECT_MODULES, DEFAULT_PROJECT_PRICING } from '@/types';
 import { uniqueSlug } from '@/lib/utils';
 import { generatePartnerCode } from '@/lib/partners';
+import { R2_PUBLIC_BASE_URL } from '@/lib/env';
 
 /**
  * La couche d'outils — ce que l'IA a le droit de faire.
@@ -1739,6 +1740,154 @@ const publishForm: ToolDefinition = {
 // Le registre
 // ============================================================================
 
+
+// ============================================================================
+// Apparence du formulaire — bannière et thème
+// ============================================================================
+
+/**
+ * Les adresses acceptées pour une image.
+ *
+ * Uniquement le domaine média de Mooove. C'est délibéré : le modèle reçoit
+ * l'adresse d'une image que la personne vient de joindre, et il n'a aucune
+ * raison d'en fabriquer une autre. Sans cette barrière, une adresse inventée —
+ * ou soufflée par le contenu d'un document — se retrouverait affichée en tête
+ * du formulaire publié, chargée depuis un serveur qui n'est pas le nôtre.
+ */
+function isMediaUrl(url: string): boolean {
+  return url.startsWith(`${R2_PUBLIC_BASE_URL}/`) && !url.includes('..');
+}
+
+const setBanner: ToolDefinition = {
+  name: 'set_banner',
+  description:
+    'Pose une image en bannière du formulaire courant, ou la retire. L’adresse doit être celle d’une image jointe à la conversation — n’en invente jamais une.',
+  schema: z.object({
+    url: z
+      .string()
+      .nullable()
+      .describe('Adresse publique de l’image jointe, ou null pour retirer la bannière.'),
+    fit: z
+      .enum(['contain', 'cover'])
+      .optional()
+      .describe(
+        'contain montre l’image entière et le bandeau prend sa hauteur — le bon choix pour une bannière déjà composée. cover remplit un bandeau de hauteur fixe et peut rogner — le bon choix pour une photo.'
+      ),
+    full_width: z.boolean().optional().describe('Bannière bord à bord.'),
+    height: z
+      .number()
+      .int()
+      .min(80)
+      .max(480)
+      .optional()
+      .describe('Hauteur du bandeau en pixels — n’a d’effet qu’avec fit = cover.')
+  }),
+  mutates: true,
+  async run(
+    input: { url: string | null; fit?: 'contain' | 'cover'; full_width?: boolean; height?: number },
+    ctx
+  ) {
+    if (!ctx.formId) return fail(NO_FORM);
+
+    if (input.url && !isMediaUrl(input.url)) {
+      return fail(
+        'Cette adresse n’est pas celle d’une image déposée dans Papyrus. Sers-toi de l’adresse donnée avec l’image jointe.'
+      );
+    }
+
+    const { data: form } = await ctx.supabase
+      .from('forms')
+      .select('theme')
+      .eq('id', ctx.formId)
+      .maybeSingle();
+
+    const theme = { ...((form?.theme as Record<string, unknown>) ?? {}) };
+
+    theme.banner_url = input.url;
+    if (input.fit) theme.banner_fit = input.fit;
+    if (input.full_width !== undefined) theme.banner_full_width = input.full_width;
+    if (input.height !== undefined) theme.banner_height = input.height;
+
+    // Une nouvelle image repart d’un cadrage neutre : garder le zoom et la
+    // position de la précédente afficherait la nouvelle de travers, et
+    // personne ne comprendrait pourquoi.
+    if (input.url) {
+      theme.banner_scale = 1;
+      theme.banner_position_x = 50;
+      theme.banner_position_y = 50;
+      if (!input.fit && !theme.banner_fit) theme.banner_fit = 'contain';
+    }
+
+    const { error } = await ctx.supabase.from('forms').update({ theme }).eq('id', ctx.formId);
+    if (error) return fail('La bannière n’a pas pu être enregistrée.');
+
+    return ok(input.url ? 'Bannière posée en en-tête du formulaire.' : 'Bannière retirée.');
+  }
+};
+
+/** Une couleur hexadécimale à six chiffres — la seule forme que le thème lit. */
+const HEX = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+const setTheme: ToolDefinition = {
+  name: 'set_theme',
+  description:
+    'Règle les couleurs et la typographie du formulaire courant : accent, fond, dégradé. Sert à accorder le formulaire à une bannière ou à une charte.',
+  schema: z.object({
+    accent: HEX.optional().describe('Couleur des boutons et des éléments actifs.'),
+    bg: HEX.optional().describe('Couleur de fond de la page.'),
+    font: z
+      .string()
+      .max(60)
+      .optional()
+      .describe('Nom de la police, par exemple « Aktiv Grotesk ».'),
+    bg_type: z
+      .enum(['color', 'gradient'])
+      .optional()
+      .describe('color pour un aplat, gradient pour un dégradé entre deux teintes.'),
+    bg_gradient_from: HEX.optional(),
+    bg_gradient_to: HEX.optional(),
+    bg_gradient_angle: z.number().int().min(0).max(360).optional()
+  }),
+  mutates: true,
+  async run(
+    input: {
+      accent?: string;
+      bg?: string;
+      font?: string;
+      bg_type?: 'color' | 'gradient';
+      bg_gradient_from?: string;
+      bg_gradient_to?: string;
+      bg_gradient_angle?: number;
+    },
+    ctx
+  ) {
+    if (!ctx.formId) return fail(NO_FORM);
+
+    const { data: form } = await ctx.supabase
+      .from('forms')
+      .select('theme')
+      .eq('id', ctx.formId)
+      .maybeSingle();
+
+    const theme = { ...((form?.theme as Record<string, unknown>) ?? {}) };
+
+    for (const [key, value] of Object.entries(input)) {
+      if (value !== undefined) theme[key] = value;
+    }
+
+    // Un fond en aplat se règle par `bg` ; le thème lit `bg_color` pour la
+    // même chose selon le chemin. On tient les deux d’accord plutôt que de
+    // laisser l’un contredire l’autre à l’écran.
+    if (input.bg) theme.bg_color = input.bg;
+    if (input.bg_type === 'color' && !input.bg && theme.bg_color) theme.bg = theme.bg_color;
+
+    const { error } = await ctx.supabase.from('forms').update({ theme }).eq('id', ctx.formId);
+    if (error) return fail('Le thème n’a pas pu être enregistré.');
+
+    return ok('Thème du formulaire mis à jour.');
+  }
+};
+
 export const TOOLS: ToolDefinition[] = [
   describeProject,
   describeForm,
@@ -1773,6 +1922,8 @@ export const TOOLS: ToolDefinition[] = [
   linkPartnerToProject,
   connectSheet,
   mapColumns,
+  setBanner,
+  setTheme,
   publishForm
 ];
 

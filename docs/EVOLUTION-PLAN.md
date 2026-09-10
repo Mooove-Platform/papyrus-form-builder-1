@@ -751,6 +751,23 @@ page — une erreur non rattrapée fait échouer le test qui l'a provoquée.
 
 ## 5. Risques
 
+- **Deux formules pour dessiner la meme chose.** Le constructeur posait la
+  banniere en pixels absolus, avec son zoom et son centre ; l'apercu et la page
+  publique faisaient `object-fit: cover` avec `object-position`, qui **ignore le
+  zoom** et ne place pas le meme point au meme endroit. On cadrait donc, on
+  ouvrait l'apercu, la banniere repartait au centre, et on recadrait. Le typage
+  ne pouvait rien voir : les deux branches lisaient les memes champs. La formule
+  vit desormais seule dans `lib/banner-frame.ts`, et deux tests de bout en bout
+  relisent le cadrage rendu de chaque cote pour verifier qu'il est le meme.
+  A retenir : **un reglage qui n'agit pas est pire qu'un reglage absent** — il
+  se regle indefiniment.
+
+- **Une regle globale peut annuler un reglage.** `img { max-width: 100% }`, pose
+  par la feuille de base de Tailwind, ramenait a 100 % tout zoom superieur. Le
+  curseur montait a 160 %, l'image ne bougeait pas. Trouve en mesurant l'image
+  rendue, pas en relisant le code.
+
+
 - **Un écran peut exister et n'être relié à rien.** `/projects/nouveau` — les
   trois questions puis l'assistant — était en place depuis la phase 6, et trois
   des quatre boutons « Nouveau projet » ne s'y rendaient pas : le tableau de

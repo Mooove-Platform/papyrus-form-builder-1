@@ -4,6 +4,12 @@ import { Layout, Circle, Move } from 'lucide-react';
 import { useRef, useEffect, useState } from 'react';
 import type { FormTheme } from '@/types';
 import { cn } from '@/lib/utils';
+import {
+  DEFAULT_BANNER_HEIGHT,
+  bannerFit,
+  bannerImageStyle,
+  coverScale
+} from '@/lib/banner-frame';
 
 type HandleId = 'tl' | 'tm' | 'tr' | 'ml' | 'mr' | 'bl' | 'bm' | 'br';
 
@@ -129,7 +135,19 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
 
   // State pour stocker la largeur dynamique du conteneur (pour la réactivité mobile / redimensionnement)
   const [containerW, setContainerW] = useState<number>(600);
-  const containerH = 160;
+
+  /**
+   * Deux modes, et un seul demande un réglage.
+   *
+   * « Voir entière » (`contain`) donne au bandeau la hauteur de l'image : rien
+   * n'est rogné, il n'y a donc rien à cadrer. C'est le mode qui convient à une
+   * bannière déjà dessinée — on la montre telle qu'elle a été faite.
+   *
+   * « Remplir » (`cover`) garde une hauteur choisie et laisse déplacer et
+   * agrandir l'image dedans. C'est le mode qui convient à une photo.
+   */
+  const isContain = bannerFit(theme) === 'contain';
+  const containerH = theme.banner_height ?? DEFAULT_BANNER_HEIGHT;
 
   // ResizeObserver pour garder containerW parfaitement synchronisé en temps réel
   useEffect(() => {
@@ -173,6 +191,17 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
   const imgX = (containerW * posXpct / 100) - (imgW / 2);
   const imgY = (containerH * posYpct / 100) - (imgH / 2);
 
+  /**
+   * Le cadrage, calculé là où l'aperçu et la page publique le calculent aussi.
+   * Voir `lib/banner-frame.ts` : c'est tout l'intérêt de l'avoir sorti d'ici.
+   */
+  const framedImageStyle = bannerImageStyle({
+    ...theme,
+    banner_scale: scale,
+    banner_position_x: posXpct,
+    banner_position_y: posYpct
+  });
+
   // Fonction utilitaire clamp
   const _clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -190,58 +219,28 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
     }
   }, [hasBanner, theme.banner_scale, theme.banner_position_x, theme.banner_position_y, onThemeChange]);
 
-  // Recalcule le cadrage optimal quand le mode d'affichage (fit) change
+  /**
+   * Recadre au mieux quand on revient sur « Remplir ».
+   *
+   * Ce recalcul n'a plus lieu d'etre en « Voir entiere » : ce mode ne cadre
+   * rien, il montre l'image entiere. Il ne sert donc qu'a repartir d'un
+   * cadrage propre quand on rebascule sur « Remplir » — l'image couvre le
+   * bandeau, centree, et on ajuste a partir de la si on veut.
+   */
   const lastFitRef = useRef<string | undefined>(theme.banner_fit);
   useEffect(() => {
-    if (!hasBanner || !onThemeChange || natSize.w === 1 || !containerRef.current) return;
+    if (!hasBanner || !onThemeChange || natSize.w === 1) return;
+    if (lastFitRef.current === theme.banner_fit) return;
 
-    if (lastFitRef.current !== theme.banner_fit) {
-      lastFitRef.current = theme.banner_fit;
-      
-      const cw = containerRef.current.offsetWidth;
-      const ch = containerRef.current.offsetHeight;
-      const nw = natSize.w;
-      const nh = natSize.h;
-      const fit = theme.banner_fit ?? 'cover';
+    lastFitRef.current = theme.banner_fit;
+    if ((theme.banner_fit ?? 'cover') !== 'cover') return;
 
-      if (fit === 'cover') {
-        const scaleX = cw / nw;
-        const scaleY = ch / nh;
-        const coverRatio = Math.max(scaleX, scaleY);
-        const imgW = Math.round(nw * coverRatio);
-        const imgH = Math.round(nh * coverRatio);
-        const posY = Math.round((ch - imgH) / 2);
-        const posX = Math.round((cw - imgW) / 2);
-        const scale = Math.round((imgW / cw) * 100) / 100;
-        onThemeChange({
-          banner_scale: scale,
-          banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
-          banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
-        });
-      } else if (fit === 'contain') {
-        // Pour "voir entière", l'image doit rentrer intégralement (largeur ET hauteur) sans rognage.
-        // On calcule les échelles pour la largeur et la hauteur, et on prend le minimum.
-        const scaleX = cw / nw;
-        const scaleY = ch / nh;
-        const containRatio = Math.min(scaleX, scaleY);
-        const imgW = Math.round(nw * containRatio);
-        const imgH = Math.round(nh * containRatio);
-        
-        // Centrage de l'image
-        const posX = Math.round((cw - imgW) / 2);
-        const posY = Math.round((ch - imgH) / 2);
-        
-        // Convertit la largeur d'affichage en scale (comme imgW = cw * scale)
-        const scale = Math.round((imgW / cw) * 100) / 100;
-        
-        onThemeChange({
-          banner_scale: Math.max(0.05, scale),
-          banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
-          banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
-        });
-      }
-    }
-  }, [theme.banner_fit, hasBanner, natSize, onThemeChange]);
+    onThemeChange({
+      banner_scale: coverScale(natSize.w, natSize.h, containerW, containerH),
+      banner_position_x: 50,
+      banner_position_y: 50
+    });
+  }, [theme.banner_fit, hasBanner, natSize, containerW, containerH, onThemeChange]);
 
   // Logique drag PAN (déplacer l'image)
   const handlePanStart = (e: React.MouseEvent) => {
@@ -366,8 +365,18 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
         <div
           ref={outerRef}
           onClick={!preview ? onSelectBanner : undefined}
+          style={{
+            // Le bandeau était figé à 160 px : une bannière large y entrait
+            // rognée ou minuscule, d'où le recadrage sans fin. Sa hauteur suit
+            // maintenant le mode — l'image en « Voir entière », le réglage en
+            // « Remplir ».
+            height:
+              hasBanner && isContain
+                ? 'auto'
+                : `${hasBanner ? containerH : DEFAULT_BANNER_HEIGHT}px`
+          }}
           className={cn(
-            'h-40 relative transition-colors',
+            'relative transition-colors',
             theme.banner_full_width
               ? 'w-screen ml-[calc(-50vw+50%)] mr-[calc(-50vw+50%)]'
               : 'w-full rounded-lg',
@@ -386,94 +395,28 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
                 style={{
                   overflow: 'hidden',
                   position: 'relative',
-                  height: '160px'
+                  // En « Voir entière », la hauteur vient de l'image elle-même.
+                  height: isContain ? 'auto' : `${containerH}px`
                 }}
               >
-                {preview ? (
-                  // Mode preview/public : object-fit pour un rendu responsive cohérent
-                  // indépendant de la largeur du container (fix décalage builder vs publié)
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={theme.banner_url!}
-                    alt="Bannière"
-                    draggable={false}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      objectPosition: `${posXpct}% ${posYpct}%`,
-                      display: 'block',
-                      userSelect: 'none',
-                      pointerEvents: 'none',
-                    }}
-                  />
-                ) : (
+                {/* Une seule image, un seul style — constructeur, aperçu et page
+                    publique dessinent désormais rigoureusement la même chose. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={theme.banner_url!}
+                  alt="Bannière"
+                  draggable={false}
+                  style={framedImageStyle}
+                  onLoad={(e) => {
+                    const el = e.currentTarget;
+                    setNatSize({ w: el.naturalWidth, h: el.naturalHeight });
+                  }}
+                />
+
+                {!preview && (
                   <>
-                    {/* Mode éditeur : positionnement pixel pour contrôle précis */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={theme.banner_url!}
-                      alt="Bannière"
-                      draggable={false}
-                      style={{
-                        position: 'absolute',
-                        left: imgX + 'px',
-                        top: imgY + 'px',
-                        width: imgW + 'px',
-                        height: imgH + 'px',
-                        objectFit: 'fill',
-                        userSelect: 'none',
-                        pointerEvents: 'none',
-                      }}
-                      onLoad={(e) => {
-                        const el = e.currentTarget;
-                        const nw = el.naturalWidth;
-                        const nh = el.naturalHeight;
-                        setNatSize({ w: nw, h: nh });
-                        const cw = containerRef.current?.offsetWidth ?? 600;
-                        const ch = containerRef.current?.offsetHeight ?? 160;
-
-                        const isFirstLoad = !theme.banner_scale || theme.banner_scale === 1;
-                        if (!isFirstLoad || !onThemeChange) return;
-
-                        const fit = theme.banner_fit ?? 'cover';
-
-                        if (fit === 'cover') {
-                          const scaleX = cw / nw;
-                          const scaleY = ch / nh;
-                          const coverRatio = Math.max(scaleX, scaleY);
-                          const imgW = Math.round(nw * coverRatio);
-                          const imgH = Math.round(nh * coverRatio);
-                          const posY = Math.round((ch - imgH) / 2);
-                          const posX = Math.round((cw - imgW) / 2);
-                          const scale = Math.round((imgW / cw) * 100) / 100;
-                          onThemeChange({
-                            banner_scale: scale,
-                            banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
-                            banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
-                          });
-                        }
-
-                        if (fit === 'contain') {
-                          const scaleX = cw / nw;
-                          const scaleY = ch / nh;
-                          const containRatio = Math.min(scaleX, scaleY);
-                          const imgW = Math.round(nw * containRatio);
-                          const imgH = Math.round(nh * containRatio);
-                          const posX = Math.round((cw - imgW) / 2);
-                          const posY = Math.round((ch - imgH) / 2);
-                          const scale = Math.round((imgW / cw) * 100) / 100;
-                          onThemeChange({
-                            banner_scale: Math.max(0.05, scale),
-                            banner_position_x: Math.round(((posX + imgW / 2) / cw) * 100),
-                            banner_position_y: Math.round(((posY + imgH / 2) / ch) * 100),
-                          });
-                        }
-                      }}
-                    />
-
                     {/* Zone de drag centrale */}
-                    {isEditing && (
+                    {isEditing && !isContain && (
                       <div
                         onMouseDown={handlePanStart}
                         className="absolute inset-0 cursor-grab active:cursor-grabbing"
@@ -507,8 +450,10 @@ export function FormHeader({ theme, selectedElement, onSelectBanner, onSelectLog
                 )}
               </div>
 
-              {/* Poignées ICI — en dehors du overflow:hidden */}
-              {isEditing && (
+              {/* Poignées ICI — en dehors du overflow:hidden. Absentes en
+                  « Voir entière » : il n'y a rien à recadrer, et une poignée
+                  qui ne fait rien laisse croire que le réglage est cassé. */}
+              {isEditing && !isContain && (
                 <ResizeHandles onResizeStart={handleResizeStart} />
               )}
             </>

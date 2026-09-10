@@ -229,6 +229,139 @@ test.describe('Revue complète', () => {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
+  // 1 ter. La bannière est cadrée pareil partout
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Le défaut que ce test empêche de revenir.
+   *
+   * Le constructeur et la page publique dessinaient la bannière avec deux
+   * formules différentes. Le constructeur posait l’image en pixels absolus,
+   * avec son zoom et son centre. La page publique faisait `object-fit: cover`
+   * et `object-position`, ce qui **ignore le zoom** et ne place pas le même
+   * point au même endroit. On cadrait donc avec soin, on ouvrait l’aperçu, et
+   * la bannière repartait au centre — indéfiniment.
+   *
+   * On ne compare pas des pixels : les deux pages n’ont pas la même largeur.
+   * On relit dans la géométrie rendue les TROIS valeurs réglées — centre
+   * horizontal, centre vertical, zoom — et on vérifie que chacune des deux
+   * pages rend bien celles qui sont enregistrées.
+   */
+
+  /** Une image 4:1, en `data:` — la géométrie seule nous intéresse. */
+  const TEST_BANNER =
+    'data:image/svg+xml;base64,' +
+    Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100"><rect width="400" height="100" fill="#F0781E"/></svg>'
+    ).toString('base64');
+
+  const FRAMING = {
+    banner_url: TEST_BANNER,
+    banner_fit: 'cover',
+    banner_scale: 1.6,
+    banner_position_x: 28,
+    banner_position_y: 72,
+    banner_height: 240
+  };
+
+  /** Relit le cadrage effectif depuis l’image affichée. */
+  async function readFraming(page: Page) {
+    return page.evaluate(() => {
+      const img = document.querySelector('img[alt="Bannière"]') as HTMLImageElement | null;
+      if (!img?.parentElement) return null;
+      const band = img.parentElement.getBoundingClientRect();
+      const rect = img.getBoundingClientRect();
+      return {
+        centreX: Math.round(((rect.left + rect.width / 2 - band.left) / band.width) * 1000) / 10,
+        centreY: Math.round(((rect.top + rect.height / 2 - band.top) / band.height) * 1000) / 10,
+        zoom: Math.round((rect.width / band.width) * 100) / 100
+      };
+    });
+  }
+
+  // Les deux ecrivent le theme du meme formulaire : lances en parallele, l'un
+  // ecraserait le reglage que l'autre vient de poser, et l'echec designerait
+  // la mauvaise coupable.
+  test.describe('Bannière', () => {
+    test.describe.configure({ mode: 'serial' });
+
+    test('la bannière est cadrée à l’identique dans le constructeur et en public', async ({
+      page,
+      context
+    }) => {
+      test.skip(!FORM || !SLUG, 'E2E_AUDIT_FORM ou E2E_AUDIT_SLUG non défini');
+      test.setTimeout(90_000);
+
+      await patchForm(page, { theme: { ...FRAMING }, status: 'published' });
+
+      await page.goto(`/forms/${FORM}/edit`);
+      await page.waitForTimeout(2500);
+      const inBuilder = await readFraming(page);
+
+      // Page publique, dans un contexte non connecté : c’est ce que voit un
+      // répondant, et la largeur n’y est pas la même — d’où la comparaison sur
+      // les valeurs réglées plutôt que sur des pixels.
+      const anon = await context.browser()!.newContext();
+      const visitor = await anon.newPage();
+      await visitor.goto(`${page.url().split('/forms/')[0]}/f/${SLUG}`);
+      await visitor.waitForTimeout(2500);
+      const onPublic = await readFraming(visitor);
+      await anon.close();
+
+      expect(inBuilder, 'bannière visible dans le constructeur').not.toBeNull();
+      expect(onPublic, 'bannière visible sur la page publique').not.toBeNull();
+
+      // Le zoom est le plus révélateur : c’est lui que l’ancienne page publique
+      // jetait entièrement.
+      expect(onPublic!.zoom, 'zoom rendu en public').toBeCloseTo(FRAMING.banner_scale, 1);
+      expect(onPublic!.centreX, 'centre horizontal en public').toBeCloseTo(
+        FRAMING.banner_position_x,
+        0
+      );
+      expect(onPublic!.centreY, 'centre vertical en public').toBeCloseTo(
+        FRAMING.banner_position_y,
+        0
+      );
+
+      expect(inBuilder!.zoom, 'zoom identique').toBeCloseTo(onPublic!.zoom, 1);
+      expect(inBuilder!.centreX, 'centre horizontal identique').toBeCloseTo(onPublic!.centreX, 0);
+      expect(inBuilder!.centreY, 'centre vertical identique').toBeCloseTo(onPublic!.centreY, 0);
+    });
+
+    test('« Voir entière » ne rogne rien et ne demande aucun réglage', async ({ page }) => {
+      test.skip(!SLUG, 'E2E_AUDIT_SLUG non défini');
+
+      // Un zoom absurde est laissé dans le thème exprès : en « Voir entière » il
+      // ne doit avoir aucun effet, puisqu’il n’y a rien à cadrer.
+      await patchForm(page, {
+        theme: { ...FRAMING, banner_fit: 'contain', banner_scale: 2.4 },
+        status: 'published'
+      });
+
+      await page.goto(`/f/${SLUG}`);
+      await page.waitForTimeout(2000);
+
+      const shown = await page.evaluate(() => {
+        const img = document.querySelector('img[alt="Bannière"]') as HTMLImageElement | null;
+        if (!img?.parentElement) return null;
+        const band = img.parentElement.getBoundingClientRect();
+        const rect = img.getBoundingClientRect();
+        return {
+          largeur: Math.round((rect.width / band.width) * 100) / 100,
+          // Le bandeau prend la hauteur de l’image : rien ne dépasse, rien ne
+          // manque. C’est ce qui fait qu’il n’y a rien à régler.
+          hauteur: Math.round((rect.height / band.height) * 100) / 100
+        };
+      });
+
+      expect(shown, 'bannière visible').not.toBeNull();
+      expect(shown!.largeur, 'image montrée sur toute la largeur, sans zoom').toBeCloseTo(1, 1);
+      expect(shown!.hauteur, 'bandeau à la hauteur de l’image, rien de rogné').toBeCloseTo(1, 1);
+    });
+
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
   // 2. Les onglets d'un projet et d'un formulaire
   // ══════════════════════════════════════════════════════════════════════════
 
