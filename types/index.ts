@@ -179,6 +179,15 @@ export interface FieldValidation {
   other_label?: string; // libellé de l'option "Autre" (par défaut : "Autre")
   options_columns?: 1 | 2 | 3; // nombre de colonnes pour disposer les options
   display_style?: 'cards' | 'buttons' | 'slider'; // pour 'single_choice' ou 'nps'
+  /**
+   * L'animation du contrôle, pour 'rating' et 'nps'.
+   *
+   * Absente = aucune : un formulaire déjà publié ne se met pas à bouger parce
+   * qu'on a ajouté la fonctionnalité. Les valeurs possibles vivent dans
+   * `lib/field-animation.ts` — étoiles : pop, spin, cascade ; échelle : gauge,
+   * ember.
+   */
+  animation_style?: string;
   has_subfields?: boolean; // pour 'multiple_choice' — active les sous-questions appliquées à chaque option cochée
   randomize_options?: boolean; // pour les champs à choix — mélange l'ordre des options côté répondant
   selection_min?: number; // pour 'multiple_choice' — nombre minimum de cases à cocher

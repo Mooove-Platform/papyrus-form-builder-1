@@ -6,6 +6,7 @@ import type { Field, FieldValidation, Form, MultilingualText } from '@/types';
 import { FIELD_META } from '@/lib/field-meta';
 import { COUNTRIES } from '@/lib/constants/countries';
 import { cn } from '@/lib/utils';
+import { RATING_ANIMATIONS, SCALE_ANIMATIONS } from '@/lib/field-animation';
 import { Input } from '@/components/ui/Input';
 import { OptionsEditor } from './OptionsEditor';
 import { StyleEditor } from './StyleEditor';
@@ -483,6 +484,49 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
               </option>
             ))}
           </select>
+        </Section>
+      )}
+
+      {(field.type === 'rating' || field.type === 'nps') && (
+        <Section title="Animation">
+          {/*
+            Une réaction visible et graduée à la saisie.
+
+            « Aucune » est le premier choix ET le défaut : un formulaire déjà
+            publié ne doit pas se mettre à bouger parce qu'on a ajouté cette
+            fonctionnalité. Les autres styles jouent le MÊME geste avec plus
+            d'ampleur à mesure que la note monte — c'est ce qui rend une note
+            haute plus belle sans qu'il faille entretenir deux animations.
+          */}
+          <div className="space-y-1.5">
+            {(field.type === 'rating' ? RATING_ANIMATIONS : SCALE_ANIMATIONS).map((choice) => {
+              const active = (field.validation?.animation_style ?? 'none') === choice.value;
+              return (
+                <button
+                  key={choice.value}
+                  type="button"
+                  onClick={() => patchValidation({ animation_style: choice.value })}
+                  aria-pressed={active}
+                  className={cn(
+                    'w-full rounded-md border px-3 py-2 text-left transition',
+                    active
+                      ? 'border-accent bg-accent/5'
+                      : 'border-border-strong hover:border-accent'
+                  )}
+                >
+                  <div className="text-xs font-medium text-text-primary">{choice.label}</div>
+                  <div className="mt-0.5 text-[11px] leading-snug text-text-tertiary">
+                    {choice.hint}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-text-tertiary">
+            L’animation est retirée d’elle-même pour qui a demandé moins de mouvement dans les
+            réglages de son système. La couleur et le remplissage, eux, restent : ils portent la
+            réponse.
+          </p>
         </Section>
       )}
 

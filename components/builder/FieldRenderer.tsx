@@ -1,7 +1,10 @@
 'use client';
 
 import { useMemo, useState, useRef } from 'react';
-import { Star, Upload, Calendar } from 'lucide-react';
+import {
+  Upload,
+  Calendar
+} from 'lucide-react';
 import type { Field, FieldOption, SubField } from '@/types';
 import { AutoTextarea } from '@/components/ui/AutoTextarea';
 import { PhoneField as BuilderPhoneField } from './fields/PhoneField';
@@ -9,6 +12,8 @@ import { PhoneField as RespondentPhoneField } from '@/components/respondent/fiel
 import { FileUploadField } from '@/components/respondent/fields/FileUploadField';
 import { parseVideoEmbed } from '@/lib/video';
 import { cn } from '@/lib/utils';
+import { AnimatedRating } from './fields/AnimatedRating';
+import { AnimatedScale } from './fields/AnimatedScale';
 import { useRespondentStrings } from '@/components/public/respondent-strings';
 import { LIMITS } from '@/lib/constants/limits';
 import { toast } from '@/components/ui/Toast';
@@ -354,11 +359,12 @@ function FieldControl({
     case 'rating': {
       const max = field.validation?.max ?? 5;
       return (
-        <Rating
+        <AnimatedRating
           max={max}
           preview={preview}
           value={value}
           onChange={onValueChange}
+          style={field.validation?.animation_style as never}
         />
       );
     }
@@ -1216,59 +1222,10 @@ function DropdownChoice({
   );
 }
 
-function Rating({
-  max,
-  preview,
-  value,
-  onChange
-}: {
-  max: number;
-  preview: boolean;
-  value?: number;
-  onChange?: (val: number) => void;
-}) {
-  const [hover, setHover] = useState(0);
-  const [localValue, setLocalValue] = useState(0);
-  const currentValue = value !== undefined ? value : localValue;
-  const handleValueChange = (val: number) => {
-    if (onChange) onChange(val);
-    else setLocalValue(val);
-  };
-
-  if (preview) {
-    return (
-      <div className="flex items-center gap-1.5">
-        {Array.from({ length: max }).map((_, i) => (
-          <Star key={i} className="h-7 w-7 text-text-tertiary" strokeWidth={1.5} />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1.5">
-      {Array.from({ length: max }).map((_, i) => {
-        const filled = (hover || currentValue) > i;
-        return (
-          <button
-            key={i}
-            type="button"
-            onMouseEnter={() => setHover(i + 1)}
-            onMouseLeave={() => setHover(0)}
-            onClick={() => handleValueChange(i + 1)}
-            className="transition"
-            aria-label={`Note ${i + 1}`}
-          >
-            <Star
-              className={`h-7 w-7 transition ${filled ? 'fill-mooove-amber text-mooove-amber' : 'text-text-tertiary'}`}
-              strokeWidth={1.5}
-            />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+// L'ancien composant `Rating` vivait ici. Il est parti dans
+// `fields/AnimatedRating.tsx` : le rendu des etoiles porte desormais une
+// animation reglable, et un composant de cent lignes au milieu d'un fichier
+// de deux mille sept cents n'aidait personne.
 
 function NpsScale({
   field,
@@ -1299,29 +1256,18 @@ function NpsScale({
 
   const renderContent = () => {
     if (displayStyle === 'slider') {
-      const hasValue = currentValue !== null && currentValue !== undefined;
-
+      // La jauge vit dans son propre composant : elle porte une animation
+      // reglable, et le rail gris d'origine reste son style « Aucune ».
       return (
-        <div className="scale-slider-wrapper flex items-center gap-3 w-full py-1">
-          <input
-            type="range"
-            min={min}
-            max={max}
-            step={1}
-            disabled={preview}
-            value={hasValue ? currentValue : Math.round((min + max) / 2)}
-            onChange={(e) => handleValueChange(Number(e.target.value))}
-            className={cn(
-              "scale-slider grow flex-1 appearance-none h-1 bg-border-strong rounded-lg cursor-pointer outline-hidden transition-all",
-              "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2",
-              "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-(--accent) [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-110 [&::-webkit-slider-thumb]:active:scale-125 [&::-webkit-slider-thumb]:shadow-xs",
-              "[&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-(--accent) [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:transition-transform [&::-moz-range-thumb]:hover:scale-110 [&::-moz-range-thumb]:active:scale-125 [&::-moz-range-thumb]:shadow-xs"
-            )}
-          />
-          <span className="scale-slider-value text-sm font-semibold text-accent font-mono min-w-[28px] text-right shrink-0 select-none">
-            {hasValue ? currentValue : '—'}
-          </span>
-        </div>
+        <AnimatedScale
+          min={min}
+          max={max}
+          value={currentValue}
+          onChange={handleValueChange}
+          preview={preview}
+          style={field?.validation?.animation_style as never}
+          ariaLabel={field?.label?.fr}
+        />
       );
     }
 
