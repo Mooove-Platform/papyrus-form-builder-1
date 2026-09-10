@@ -41,6 +41,7 @@ import { resolvePricing } from '@/lib/pricing';
 import { FieldSettings } from '@/components/builder/FieldSettings';
 import { FormDesignPanel } from '@/components/builder/FormDesignPanel';
 import { FormHeader } from '@/components/builder/FormHeader';
+import { FormHeading } from '@/components/builder/FormHeading';
 import { FormHeaderSettings } from '@/components/builder/FormHeaderSettings';
 import { PreviewModal } from '@/components/builder/PreviewModal';
 import { getBackgroundStyle } from '@/lib/theme';
@@ -879,36 +880,18 @@ export function FormBuilder({
             </button>
           )}
           <div className="flex items-center gap-2">
-            <div className="relative inline-grid">
-              {/* Span miroir invisible — le conteneur prend la largeur du texte réel */}
-              <span
-                style={{ gridRow: '1', gridColumn: '1' }}
-                className="invisible whitespace-pre font-display text-lg pr-8 min-w-[4rem] pointer-events-none select-none"
-                aria-hidden="true"
-              >
-                {titleDraft || ' '}
-              </span>
-              <input
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={handleTitleBlur}
-                maxLength={LIMITS.FORM_TITLE_MAX}
-                size={1}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                }}
-                style={{ gridRow: '1', gridColumn: '1' }}
-                className="w-full border-0 bg-transparent font-display text-lg outline-hidden transition focus:border-b focus:border-accent pr-8"
-              />
-              {titleDraft.length > LIMITS.FORM_TITLE_MAX * 0.7 && (
-                <span className={cn(
-                  "absolute right-0 top-1/2 -translate-y-1/2 text-[10px] font-mono pointer-events-none select-none",
-                  titleDraft.length > LIMITS.FORM_TITLE_MAX * 0.8 ? "text-red-500 font-semibold" : "text-text-tertiary"
-                )}>
-                  {titleDraft.length}/{LIMITS.FORM_TITLE_MAX}
-                </span>
-              )}
-            </div>
+            {/*
+              Le titre, ici, sert de reperage — on le modifie sur la toile, a
+              sa taille reelle. Deux champs pour la meme phrase, tous deux sans
+              bordure, c'etait deux endroits ou la chercher et aucun ou la
+              reconnaitre.
+            */}
+            <span
+              className="max-w-[22rem] truncate font-display text-lg text-text-primary"
+              title={titleDraft}
+            >
+              {titleDraft || 'Sans titre'}
+            </span>
             {form.status === 'draft' && <Badge variant="draft" className="text-xs px-2 py-1">Brouillon</Badge>}
             {form.status === 'published' && <Badge variant="published" className="text-xs px-2 py-1">Publié</Badge>}
             <span className={cn(
@@ -994,17 +977,27 @@ export function FormBuilder({
               onThemeChange={handleThemeChange}
             />
 
-            {/* Description éditable */}
-            <div className="mt-3 mb-4 px-1">
-              <textarea
-                value={descriptionDraft}
-                onChange={(e) => setDescriptionDraft(e.target.value)}
-                onBlur={handleDescriptionBlur}
-                maxLength={LIMITS.FORM_DESCRIPTION_MAX}
-                placeholder="Ajoutez une description (optionnelle)..."
-                rows={2}
-                className="w-full resize-none border-0 bg-transparent font-body text-sm italic outline-hidden transition placeholder:text-text-tertiary focus:border-b focus:border-accent"
-                style={{ color: form.theme.text_color ?? 'var(--fg-secondary)' }}
+            {/*
+              Le titre et la description, modifiés là où ils s'affichent.
+
+              La toile ne montrait que la description, en italique et en corps
+              14 ; le titre vivait dans la barre d'outils, en corps 18, sans
+              étiquette. L'auteur voyait donc un grand titre sur la page
+              publiée sans rien qui lui ressemble dans l'éditeur. C'est le même
+              composant que la page publique : les deux ne peuvent plus
+              diverger.
+            */}
+            <div className="mt-4">
+              <FormHeading
+                title={titleDraft}
+                description={descriptionDraft}
+                descriptionColor={form.theme.text_color}
+                edit={{
+                  onTitleChange: setTitleDraft,
+                  onTitleCommit: handleTitleBlur,
+                  onDescriptionChange: setDescriptionDraft,
+                  onDescriptionCommit: handleDescriptionBlur
+                }}
               />
             </div>
 

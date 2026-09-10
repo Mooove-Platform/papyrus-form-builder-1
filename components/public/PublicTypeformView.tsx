@@ -9,6 +9,7 @@ import { isAnswerEmpty } from '@/lib/submission-format';
 import { fieldDescriptionId, fieldLabelId } from '@/lib/field-labelling';
 import { deservesOwnScreen, rendersOwnTitle } from '@/lib/public-fields';
 import { FormHeader } from '@/components/builder/FormHeader';
+import { FormHeading } from '@/components/builder/FormHeading';
 import { ScoreDisplay } from '@/components/respondent/ScoreDisplay';
 import { FieldRenderer } from '@/components/builder/FieldRenderer';
 import { PublicFieldCard } from './PublicFieldCard';
@@ -278,17 +279,12 @@ export function PublicTypeformView({
                 preview={true}
               />
 
-              <div className="mb-8">
-                <h1 className="font-display text-4xl text-text-primary mb-4">{form.title}</h1>
-                {form.description && (
-                  <p
-                    className="text-lg leading-relaxed"
-                    style={{ color: form.theme.text_color ?? 'var(--fg-secondary)' }}
-                  >
-                    {form.description}
-                  </p>
-                )}
-              </div>
+              <FormHeading
+                title={form.title}
+                description={form.description}
+                descriptionColor={form.theme.text_color}
+                variant="intro"
+              />
             </>
           )}
 

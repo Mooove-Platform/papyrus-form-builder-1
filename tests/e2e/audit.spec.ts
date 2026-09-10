@@ -643,6 +643,71 @@ test.describe('Revue complète', () => {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
+  // 2 bis. L'en-tête du formulaire
+  // ══════════════════════════════════════════════════════════════════════════
+
+  test('le titre et la description se modifient là où ils s’affichent', async ({ page }) => {
+    test.skip(!FORM || !SLUG, 'E2E_AUDIT_FORM non défini');
+    test.setTimeout(180_000);
+
+    /**
+     * Le défaut que ce test empêche de revenir.
+     *
+     * La toile du constructeur ne dessinait que la description, en italique et
+     * en corps 14 ; le titre vivait dans la barre d'outils, en corps 18, sans
+     * étiquette, dans un champ sans bordure qui se lisait comme un fil
+     * d'Ariane. L'auteur voyait un grand titre sur la page publiée et n'avait,
+     * dans l'éditeur, rien qui lui ressemble — « ça n'apparaît nulle part ».
+     */
+
+    const errors = watchConsole(page);
+    const titre = `Revue d’en-tête ${Date.now()}`;
+    const description = 'Modifiée depuis la toile, à sa vraie taille.';
+
+    await page.goto(`/forms/${FORM}/edit`);
+    await page.waitForTimeout(3000);
+
+    // Les deux se trouvent sur la toile, l'un sous l'autre, et portent un nom.
+    const champTitre = page.getByRole('textbox', { name: 'Titre du formulaire' });
+    const champDescription = page.getByRole('textbox', { name: 'Description du formulaire' });
+    await expect(champTitre).toBeVisible();
+    await expect(champDescription).toBeVisible();
+
+    // Ils s'affichent dans la typographie publiée : c'est ce qui fait qu'on
+    // les reconnaît. Un titre en corps 18 dans l'éditeur et en corps 36 sur la
+    // page ne se reconnaissent pas l'un l'autre.
+    const corps = await champTitre.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { size: parseFloat(style.fontSize), weight: Number(style.fontWeight) };
+    });
+    expect(corps.size, 'corps du titre sur la toile').toBeGreaterThanOrEqual(32);
+    expect(corps.weight, 'graisse du titre sur la toile').toBeGreaterThanOrEqual(700);
+
+    await champTitre.fill(titre);
+    await champDescription.fill(description);
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await page.waitForTimeout(2500);
+
+    // Enregistrés : rechargés, ils sont toujours là.
+    await page.reload();
+    await page.waitForTimeout(3000);
+    await expect(page.getByRole('textbox', { name: 'Titre du formulaire' })).toHaveValue(titre);
+    await expect(page.getByRole('textbox', { name: 'Description du formulaire' })).toHaveValue(
+      description
+    );
+
+    // Et publiés : c'est le même composant des deux côtés.
+    await patchForm(page, { status: 'published' });
+    await page.goto(`/f/${SLUG}`);
+    await page.waitForTimeout(1500);
+    await expect(page.getByRole('heading', { level: 1, name: titre })).toBeVisible();
+    await expect(page.getByText(description)).toBeVisible();
+
+    await expectNoCrash(page);
+    expect(errors, 'console de l’en-tête').toEqual([]);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
   // 3. Le constructeur : créer, ajouter, changer de mode, prévisualiser
   // ══════════════════════════════════════════════════════════════════════════
 

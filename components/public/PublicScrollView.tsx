@@ -4,6 +4,7 @@ import type { Form, Field } from '@/types';
 import type { ScoreResult } from '@/lib/scoring';
 import type { EmbedOptions } from '@/lib/embed';
 import { FormHeader } from '@/components/builder/FormHeader';
+import { FormHeading } from '@/components/builder/FormHeading';
 import {} from '@/components/builder/FieldRenderer';
 import { ScoreDisplay } from '@/components/respondent/ScoreDisplay';
 import { PublicFieldCard } from './PublicFieldCard';
@@ -88,17 +89,11 @@ export function PublicScrollView({
             selectedElement={null}
             preview={true}
           />
-          <header className="mb-8">
-            <h1 className="font-display text-4xl text-text-primary">{form.title}</h1>
-            {form.description && (
-              <p
-                className="papyrus-meta mt-2 text-base"
-                style={{ color: form.theme.text_color ?? 'var(--fg-secondary)' }}
-              >
-                {form.description}
-              </p>
-            )}
-          </header>
+          <FormHeading
+            title={form.title}
+            description={form.description}
+            descriptionColor={form.theme.text_color}
+          />
         </div>
       )}
 
