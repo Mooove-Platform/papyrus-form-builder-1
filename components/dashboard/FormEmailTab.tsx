@@ -18,6 +18,7 @@ import { ConditionsEditor } from '@/components/builder/ConditionsEditor';
 import { RichTextEditor } from '@/components/builder/RichTextEditor';
 import { updateForm } from '@/lib/store';
 import { stableStringify } from '@/lib/stable-stringify';
+import { useMediaUpload } from '@/lib/hooks/useMediaUpload';
 import {
   chooseEmailMessage,
   emailTokens,
@@ -826,6 +827,95 @@ function PreviewSection({
 // Écran de remerciement
 // ============================================================================
 
+/**
+ * Le téléversement du média de remerciement.
+ *
+ * Le fichier part directement vers Cloudflare R2 par une URL présignée : le
+ * serveur ne touche jamais les octets, et le formulaire ne garde que l'adresse
+ * publique. C'est la règle de la maison pour toute image et toute vidéo.
+ */
+function ConfirmationUpload({
+  kind,
+  url,
+  onUploaded
+}: {
+  kind: 'image' | 'video' | 'none' | 'embed';
+  url?: string;
+  onUploaded: (url: string) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const { upload, uploading, progress } = useMediaUpload();
+
+  const accept = kind === 'video' ? 'video/mp4,video/webm' : 'image/*';
+
+  async function pick(file: File) {
+    const uploaded = await upload(file);
+    if (uploaded) onUploaded(uploaded);
+  }
+
+  return (
+    <div className="space-y-2">
+      {url ? (
+        <div className="flex items-center gap-3 rounded-md border border-border bg-bg-base p-2">
+          {kind === 'video' ? (
+            <video src={url} muted className="h-14 w-24 shrink-0 rounded-sm object-cover" />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt="" className="h-14 w-24 shrink-0 rounded-sm object-cover" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] text-text-tertiary">{url}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => input.current?.click()}
+            className="shrink-0 text-[11px] text-text-secondary hover:underline"
+          >
+            Remplacer
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => input.current?.click()}
+          disabled={uploading}
+          className="flex w-full flex-col items-center gap-1.5 rounded-md border border-dashed border-border-strong bg-bg-base px-4 py-5 text-xs text-text-secondary transition hover:border-accent disabled:cursor-wait disabled:opacity-60"
+        >
+          {uploading ? `Envoi en cours… ${progress}%` : `Téléverser ${kind === 'video' ? 'une vidéo' : 'une image ou un GIF'}`}
+          <span className="text-[10px] text-text-tertiary">
+            {kind === 'video' ? 'MP4 ou WebM · max 100 Mo' : 'PNG, JPG, GIF, WebP · max 10 Mo'}
+          </span>
+        </button>
+      )}
+
+      <input
+        ref={input}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void pick(file);
+          event.target.value = '';
+        }}
+      />
+    </div>
+  );
+}
+
+const MEDIA_KINDS = [
+  { value: 'none' as const, label: 'Aucun' },
+  { value: 'image' as const, label: 'Image / GIF' },
+  { value: 'video' as const, label: 'Vidéo' },
+  { value: 'embed' as const, label: 'Lien vidéo' }
+];
+
+const CELEBRATIONS = [
+  { value: 'none' as const, label: 'Aucune', hint: 'Tout apparaît d’un coup.' },
+  { value: 'seal' as const, label: 'Apparition', hint: 'Le média arrive en fondu.' },
+  { value: 'confetti' as const, label: 'Confettis', hint: 'Une salve, une seule fois.' }
+];
+
 function ConfirmationSection({
   confirmation,
   onChange,
@@ -911,6 +1001,158 @@ function ConfirmationSection({
             className={INPUT}
           />
         </Labelled>
+
+        {/*
+          Le média de l'écran de remerciement.
+
+          C'est la seule page du parcours qui ne demande rien : elle peut donc
+          montrer quelque chose. Une image de l'équipe, le teaser de
+          l'événement, un GIF — c'est le dernier souvenir que le répondant
+          garde du formulaire.
+        */}
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-semibold text-text-primary">Image ou vidéo</p>
+          <p className="mt-0.5 text-[11px] text-text-tertiary">
+            Montrée en tête de page, à la place de la pastille de validation.
+          </p>
+
+          <div className="mt-3 grid grid-cols-4 gap-1.5">
+            {MEDIA_KINDS.map((choice) => {
+              const active = (confirmation.media?.kind ?? 'none') === choice.value;
+              return (
+                <button
+                  key={choice.value}
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      media: { ...confirmation.media, kind: choice.value }
+                    })
+                  }
+                  aria-pressed={active}
+                  className={cn(
+                    'rounded-md border px-2 py-1.5 text-[11px] font-medium transition',
+                    active
+                      ? 'border-accent bg-accent/5 text-text-primary'
+                      : 'border-border-strong text-text-secondary hover:border-accent'
+                  )}
+                >
+                  {choice.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {(confirmation.media?.kind ?? 'none') !== 'none' && (
+            <div className="mt-3 space-y-3">
+              {confirmation.media?.kind === 'embed' ? (
+                <Labelled label="Lien de la vidéo" htmlFor="confirm-media-url">
+                  <input
+                    id="confirm-media-url"
+                    value={confirmation.media?.url ?? ''}
+                    onChange={(event) =>
+                      onChange({
+                        media: { ...confirmation.media!, url: event.target.value }
+                      })
+                    }
+                    placeholder="https://youtube.com/watch?v=…"
+                    className={INPUT}
+                  />
+                  <Hint>YouTube ou Vimeo. Les autres hébergeurs sont bloqués par la politique de sécurité du navigateur.</Hint>
+                </Labelled>
+              ) : (
+                <ConfirmationUpload
+                  kind={confirmation.media!.kind}
+                  url={confirmation.media?.url}
+                  onUploaded={(url) =>
+                    onChange({ media: { ...confirmation.media!, url } })
+                  }
+                />
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Labelled label="Largeur maximale" htmlFor="confirm-media-width">
+                  <input
+                    id="confirm-media-width"
+                    type="number"
+                    min={120}
+                    max={720}
+                    step={20}
+                    value={confirmation.media?.width ?? 420}
+                    onChange={(event) =>
+                      onChange({
+                        media: {
+                          ...confirmation.media!,
+                          width: Number(event.target.value) || 420
+                        }
+                      })
+                    }
+                    className={INPUT}
+                  />
+                  <Hint>En pixels. La hauteur suit le média.</Hint>
+                </Labelled>
+
+                {confirmation.media?.kind === 'image' && (
+                  <Labelled label="Description de l’image" htmlFor="confirm-media-alt">
+                    <input
+                      id="confirm-media-alt"
+                      value={pickText(confirmation.media?.alt, language)}
+                      onChange={(event) =>
+                        onChange({
+                          media: {
+                            ...confirmation.media!,
+                            alt: {
+                              ...((confirmation.media?.alt ?? { fr: '' }) as MultilingualText),
+                              [language]: event.target.value
+                            }
+                          }
+                        })
+                      }
+                      placeholder="L’équipe sur scène"
+                      maxLength={160}
+                      className={INPUT}
+                    />
+                    <Hint>Lue par les lecteurs d’écran. Vide = image décorative, passée sous silence.</Hint>
+                  </Labelled>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* L'animation d'arrivée. */}
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-semibold text-text-primary">Animation d’arrivée</p>
+          <div className="mt-3 grid grid-cols-3 gap-1.5">
+            {CELEBRATIONS.map((choice) => {
+              const active = (confirmation.celebration ?? 'seal') === choice.value;
+              return (
+                <button
+                  key={choice.value}
+                  type="button"
+                  onClick={() => onChange({ celebration: choice.value })}
+                  aria-pressed={active}
+                  className={cn(
+                    'rounded-md border px-2 py-2 text-left transition',
+                    active
+                      ? 'border-accent bg-accent/5'
+                      : 'border-border-strong hover:border-accent'
+                  )}
+                >
+                  <span className="block text-[11px] font-medium text-text-primary">
+                    {choice.label}
+                  </span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-text-tertiary">
+                    {choice.hint}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <Hint>
+            L’animation joue une fois puis se retire, et disparaît d’elle-même pour qui a demandé
+            moins de mouvement dans les réglages de son système.
+          </Hint>
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Labelled label="Libellé du bouton" htmlFor="confirm-button-label">

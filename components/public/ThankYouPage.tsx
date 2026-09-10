@@ -1,6 +1,5 @@
 'use client';
 
-import { Check } from 'lucide-react';
 
 import type { ConfirmationConfig, Form } from '@/types';
 import type { ScoreResult } from '@/lib/scoring';
@@ -10,6 +9,7 @@ import { ScoreDisplay } from '@/components/respondent/ScoreDisplay';
 import { pickText, renderTemplate } from '@/lib/email/tokens';
 import { cn } from '@/lib/utils';
 import { useRespondentStrings } from './respondent-strings';
+import { ConfirmationMediaBlock } from './ConfirmationMediaBlock';
 
 /**
  * Le dernier écran du parcours.
@@ -89,12 +89,15 @@ export function ThankYouPage({
           </div>
         )}
 
-        <div
-          className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full"
-          style={{ backgroundColor: form.theme.accent || '#052139' }}
-        >
-          <Check className="h-10 w-10 text-white" />
-        </div>
+        {/* L'image, la vidéo ou le lien vidéo de l'auteur — et, à défaut, la
+            pastille à coche d'avant. Jamais les deux : deux points focaux à
+            quinze pixels l'un de l'autre se disputent la page. */}
+        <ConfirmationMediaBlock
+          media={config.media}
+          celebration={config.celebration}
+          accent={form.theme.accent || '#052139'}
+          alt={pickText(config.media?.alt, language) || undefined}
+        />
 
         <h1 className="mb-4 font-display text-3xl text-text-primary">{title}</h1>
 

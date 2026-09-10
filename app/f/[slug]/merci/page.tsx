@@ -1,9 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Check } from 'lucide-react';
 import { getPublicForm } from '@/lib/public-form';
-import { pickText } from '@/lib/email/tokens';
-import type { ConfirmationConfig } from '@/types';
+import { ThankYouPage } from '@/components/public/ThankYouPage';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,12 +16,18 @@ interface PageProps {
  * peut porter le score du répondant). Cette page couvre le cas d'un accès
  * direct, par exemple depuis un signet.
  *
- * Elle lisait la table `forms` avec le client navigateur : même cause, même
- * conséquence que la page publique — un 404 systématique.
+ * **Elle monte le vrai écran, elle ne le recopie plus.** Elle en dessinait
+ * auparavant sa propre version — une pastille, un titre, un message — qui
+ * ignorait tout le reste du réglage : l'image, la vidéo, l'animation
+ * d'arrivée, la mention sous le numéro et le bouton de fin. L'auteur composait
+ * donc un écran de remerciement dont la moitié disparaissait selon la porte
+ * par laquelle on arrivait. C'est le défaut qu'on avait déjà corrigé pour
+ * l'aperçu du constructeur ; il vivait encore ici.
  *
- * Le titre et le message viennent du même réglage que l'écran du parcours
- * normal. Les jetons `{{…}}` n'y sont PAS résolus, et le numéro n'y figure
- * pas : arrivé par un signet, personne ne sait de quelle réponse il s'agit.
+ * Ce qui reste propre à cette page : ni jeton `{{…}}` résolu, ni numéro de
+ * commande — arrivé par un signet, personne ne sait de quelle réponse il
+ * s'agit. Les deux tombent d'eux-mêmes, faute de réponses et de numéro à
+ * passer.
  */
 export default async function ThankYouRoute({ params }: PageProps) {
   const { slug } = await params;
@@ -31,36 +35,20 @@ export default async function ThankYouRoute({ params }: PageProps) {
 
   if (!form) notFound();
 
-  const accentColor = form.theme?.accent || '#052139';
-  const config = (form.confirmation_config ?? {}) as ConfirmationConfig;
-  const language = form.default_language || 'fr';
-  const title = pickText(config.title, language) || 'Merci pour votre réponse !';
-  const message =
-    pickText(config.message, language) || 'Nous avons bien reçu vos informations.';
-
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-bg-base p-6 text-center">
-      <div className="mx-auto w-full max-w-md space-y-6 rounded-2xl border border-border bg-bg-surface p-8 shadow-xs">
-        <div
-          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full"
-          style={{ backgroundColor: accentColor }}
+    <div className="relative">
+      <ThankYouPage form={form} submissionId={null} invoiceNumber={null} responses={{}} />
+
+      {/* L'écran de remerciement occupe toute la hauteur de la fenêtre : posé
+          à sa suite dans le flux, ce lien tombait sous la ligne de flottaison
+          d'une page qui, elle, tient à l'écran. Il s'ancre donc en bas. */}
+      <div className="absolute inset-x-0 bottom-6 text-center">
+        <Link
+          href={`/f/${form.slug}`}
+          className="text-xs text-text-tertiary underline underline-offset-4 transition hover:text-text-secondary"
         >
-          <Check className="h-8 w-8 text-white" />
-        </div>
-
-        <div className="space-y-2">
-          <h1 className="font-display text-3xl font-bold text-text-primary">{title}</h1>
-          <p className="text-sm text-text-secondary">{message}</p>
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <Link
-            href={`/f/${form.slug}`}
-            className="inline-block text-xs text-text-tertiary underline underline-offset-4 transition hover:text-text-secondary"
-          >
-            Retour au formulaire
-          </Link>
-        </div>
+          Retour au formulaire
+        </Link>
       </div>
     </div>
   );

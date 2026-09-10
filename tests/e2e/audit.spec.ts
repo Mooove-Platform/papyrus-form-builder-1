@@ -493,6 +493,111 @@ test.describe('Revue complète', () => {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
+  // 1 quinquies. L'écran de remerciement
+  // ══════════════════════════════════════════════════════════════════════════
+
+  test.describe('Écran de remerciement', () => {
+    test.describe.configure({ mode: 'serial' });
+
+    /**
+     * Le défaut que ces tests empêchent de revenir.
+     *
+     * `/f/[slug]/merci` dessinait sa PROPRE version de l'écran de remerciement
+     * — une pastille, un titre, un message — qui ignorait tout le reste du
+     * réglage : l'image, la vidéo, l'animation d'arrivée, la mention sous le
+     * numéro et le bouton de fin. L'auteur composait donc un écran dont la
+     * moitié disparaissait selon la porte par laquelle on arrivait. C'est
+     * exactement le défaut déjà corrigé pour l'aperçu du constructeur ; il
+     * vivait encore ici.
+     */
+
+    /** Une image minuscule, en `data:` — c'est le rendu qui nous intéresse. */
+    const TINY_IMAGE =
+      'data:image/svg+xml;base64,' +
+      Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120"><rect width="240" height="120" fill="#2AC2DE"/></svg>'
+      ).toString('base64');
+
+    test('l’image de l’auteur s’affiche, et remplace la pastille', async ({ page }) => {
+      test.skip(!SLUG, 'E2E_AUDIT_SLUG non défini');
+
+      await patchForm(page, {
+        status: 'published',
+        confirmation_config: {
+          title: { fr: 'Merci !' },
+          message: { fr: 'Réponse enregistrée.' },
+          media: { kind: 'image', url: TINY_IMAGE, width: 360, alt: { fr: 'Notre équipe' } },
+          celebration: 'seal'
+        }
+      });
+
+      const errors = watchConsole(page);
+      await page.goto(`/f/${SLUG}/merci`);
+      await page.waitForTimeout(1200);
+
+      await expect(page.getByAltText('Notre équipe')).toBeVisible();
+      // Un seul objet en tête : la pastille cède la place au média.
+      await expect(page.locator('svg.lucide-check')).toHaveCount(0);
+
+      await expectNoCrash(page);
+      expect(errors, 'console de l’écran de remerciement').toEqual([]);
+    });
+
+    test('la salve joue une fois, puis se retire', async ({ page }) => {
+      test.skip(!SLUG, 'E2E_AUDIT_SLUG non défini');
+
+      await patchForm(page, {
+        confirmation_config: { title: { fr: 'Merci !' }, celebration: 'confetti' }
+      });
+
+      await page.goto(`/f/${SLUG}/merci`);
+      await page.waitForTimeout(300);
+
+      // Elle existe pendant la salve…
+      const sparks = page.locator('span.absolute.rounded-\\[2px\\]');
+      expect(await sparks.count(), 'éclats pendant la salve').toBeGreaterThan(0);
+
+      // …et rien ne tourne en fond ensuite : une page de remerciement reste
+      // parfois ouverte des heures dans un onglet.
+      await page.waitForTimeout(2200);
+      const opacities = await sparks.evaluateAll((nodes) =>
+        nodes.map((node) => Number(getComputedStyle(node).opacity))
+      );
+      expect(Math.max(0, ...opacities), 'éclats éteints après la salve').toBeLessThan(0.05);
+    });
+
+    test('le lien vidéo devient un lecteur, et rien d’autre ne passe', async ({ page }) => {
+      test.skip(!SLUG, 'E2E_AUDIT_SLUG non défini');
+
+      await patchForm(page, {
+        confirmation_config: {
+          title: { fr: 'Merci !' },
+          media: { kind: 'embed', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+          celebration: 'none'
+        }
+      });
+
+      await page.goto(`/f/${SLUG}/merci`);
+      await page.waitForTimeout(1200);
+      await expect(page.locator('iframe[src*="youtube.com/embed/"]')).toHaveCount(1);
+
+      // Une adresse qui n'est ni YouTube ni Vimeo n'est pas encadrée : la
+      // politique de sécurité la bloquerait, et un cadre vide vaut moins que
+      // rien du tout.
+      await patchForm(page, {
+        confirmation_config: {
+          title: { fr: 'Merci !' },
+          media: { kind: 'embed', url: 'https://exemple.test/video.mp4' }
+        }
+      });
+      await page.goto(`/f/${SLUG}/merci`);
+      await page.waitForTimeout(900);
+      await expect(page.locator('iframe')).toHaveCount(0);
+      await expectNoCrash(page);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
   // 2. Les onglets d'un projet et d'un formulaire
   // ══════════════════════════════════════════════════════════════════════════
 

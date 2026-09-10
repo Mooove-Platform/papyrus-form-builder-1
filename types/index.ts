@@ -857,6 +857,43 @@ export const DEFAULT_EMAIL_CONFIG: EmailConfig = {
  * Il vit sur le formulaire et non sur le projet : c'est le dernier écran d'un
  * parcours précis, et il peut citer les réponses qu'on vient d'y donner.
  */
+/**
+ * Ce qu'on montre en tête de la page de remerciement.
+ *
+ * `image` couvre aussi le GIF : c'est la même balise, et distinguer les deux
+ * dans les réglages aurait demandé à l'auteur de savoir ce qu'il téléverse.
+ * `video` est un fichier déposé sur R2 ; `embed` est un lien YouTube ou Vimeo,
+ * les deux seules origines que la politique de sécurité autorise en cadre.
+ */
+export type ConfirmationMediaKind = 'none' | 'image' | 'video' | 'embed';
+
+export interface ConfirmationMedia {
+  kind: ConfirmationMediaKind;
+  /** Adresse R2 pour `image` et `video`, adresse publique pour `embed`. */
+  url?: string;
+  /** Largeur maximale à l'écran, en pixels. La hauteur suit le média. */
+  width?: number;
+  /**
+   * Description de l'image pour qui ne la voit pas.
+   *
+   * Vide = image décorative : elle est alors masquée aux lecteurs d'écran
+   * plutôt que lue sous un nom de fichier.
+   */
+  alt?: MultilingualText;
+  /** Une vidéo déposée se relance en boucle et sans son — comme un GIF. */
+  loop?: boolean;
+}
+
+/**
+ * L'animation d'arrivée sur la page de remerciement.
+ *
+ * `seal` est le comportement d'avant, animé : la pastille et sa coche
+ * arrivaient déjà, mais figées. `confetti` y ajoute une seule salve, courte,
+ * qui se démonte ensuite — rien ne tourne en fond sur une page qu'on laisse
+ * parfois ouverte.
+ */
+export type ConfirmationCelebration = 'none' | 'seal' | 'confetti';
+
 export interface ConfirmationConfig {
   title?: MultilingualText;
   /** Accepte les jetons `{{…}}`. */
@@ -869,6 +906,10 @@ export interface ConfirmationConfig {
   /** Bouton facultatif : sans URL, aucun bouton n'est affiché. */
   button_label?: MultilingualText;
   button_url?: string;
+  /** Image, GIF, vidéo ou lien vidéo montré en tête de page. */
+  media?: ConfirmationMedia;
+  /** L'animation d'arrivée. Absente = `seal`, le comportement d'avant. */
+  celebration?: ConfirmationCelebration;
 }
 
 /**
