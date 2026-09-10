@@ -7,6 +7,7 @@ import { FIELD_META } from '@/lib/field-meta';
 import { COUNTRIES } from '@/lib/constants/countries';
 import { cn } from '@/lib/utils';
 import { RATING_ANIMATIONS, SCALE_ANIMATIONS } from '@/lib/field-animation';
+import { AnimatedScale } from './fields/AnimatedScale';
 import { Input } from '@/components/ui/Input';
 import { OptionsEditor } from './OptionsEditor';
 import { StyleEditor } from './StyleEditor';
@@ -21,6 +22,42 @@ import { Switch } from '@/components/ui/Switch';
 import { LIMITS } from '@/lib/constants/limits';
 import { getFieldIcon, isIconVisible } from '@/lib/field-icons';
 import { useMediaUpload } from '@/lib/hooks/useMediaUpload';
+
+/**
+ * Le banc d’essai des animations du curseur.
+ *
+ * **Cinq des six styles sont du mouvement : on ne les choisit pas sur une
+ * phrase.** Le panneau de réglages décrivait l’effet et laissait l’auteur
+ * publier à l’aveugle, ou repasser par l’aperçu à chaque essai. Ce curseur-là
+ * est un vrai curseur — on le tire, il joue le style sélectionné — et il
+ * n’écrit nulle part : ni dans le champ, ni dans une réponse.
+ */
+function AnimationTryout({
+  min,
+  max,
+  style
+}: {
+  min: number;
+  max: number;
+  style?: string;
+}) {
+  const [value, setValue] = useState<number>(() => Math.round((min + max) / 2));
+
+  return (
+    <div className="rounded-md border border-border bg-bg-base px-3 pt-2 pb-3">
+      <p className="mb-1 text-[11px] text-text-tertiary">Essayez-le — rien n’est enregistré.</p>
+      <AnimatedScale
+        min={min}
+        max={max}
+        value={value}
+        onChange={setValue}
+        preview={false}
+        style={style as never}
+        ariaLabel="Essai de l’animation"
+      />
+    </div>
+  );
+}
 
 /** Retourne les types de fichiers acceptés par défaut selon le type de champ */
 function getDefaultAcceptTypes(type: 'image' | 'video' | 'file'): string {
@@ -487,7 +524,8 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
         </Section>
       )}
 
-      {(field.type === 'rating' || field.type === 'nps') && (
+      {(field.type === 'rating' ||
+        (field.type === 'nps' && (field.validation?.display_style ?? 'buttons') === 'slider')) && (
         <Section title="Animation">
           {/*
             Une réaction visible et graduée à la saisie.
@@ -522,6 +560,14 @@ function ContentTab({ form, field, onChange }: { form: Form; field: Field; onCha
               );
             })}
           </div>
+          {field.type === 'nps' && (
+            <AnimationTryout
+              min={field.validation?.min ?? 0}
+              max={field.validation?.max ?? 10}
+              style={field.validation?.animation_style}
+            />
+          )}
+
           <p className="text-[11px] text-text-tertiary">
             L’animation est retirée d’elle-même pour qui a demandé moins de mouvement dans les
             réglages de son système. La couleur et le remplissage, eux, restent : ils portent la

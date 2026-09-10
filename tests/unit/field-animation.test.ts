@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BALL_SIZE,
   RATING_ANIMATIONS,
   SCALE_ANIMATIONS,
   cascadeDelay,
   commitIntensity,
+  crowns,
+  energyColor,
   gaugeGradient,
+  hasRollingBall,
   heatColor,
   isHot,
+  moltenColor,
   ratingAnimation,
+  rollDegrees,
   scaleAnimation,
+  scaleEffects,
+  scaleGradient,
   scaleRatio,
-  starColor
+  starColor,
+  stretchFor
 } from '@/lib/field-animation';
 
 /**
@@ -191,5 +200,179 @@ describe('dégradé de la jauge', () => {
         expect(Number.parseFloat(position), `${ratio} -> ${position}`).toBeLessThanOrEqual(100);
       }
     }
+  });
+});
+
+
+/**
+ * Ce que protège la suite qui suit : **les trois styles à bille sont trois
+ * matières de la MÊME échelle, et leurs seuils sont la moitié de l'idée.**
+ *
+ * Un curseur qui produirait le même spectacle à 2 sur 10 et à 10 sur 10 ne
+ * dirait rien du tout : c'est la montée en intensité qui porte la réponse. Les
+ * seuils vivent donc dans une fonction pure — le rendu sur toile, lui, n'est
+ * pas vérifiable ici.
+ */
+
+describe('les styles à bille', () => {
+  it('en propose trois, et eux seuls changent la géométrie du curseur', () => {
+    expect(hasRollingBall('heat')).toBe(true);
+    expect(hasRollingBall('energy')).toBe(true);
+    expect(hasRollingBall('molten')).toBe(true);
+
+    // Les trois premiers gardent le contrôle tel qu'il est : ils ne coûtent ni
+    // mesure, ni toile, ni boucle d'animation.
+    expect(hasRollingBall('none')).toBe(false);
+    expect(hasRollingBall('gauge')).toBe(false);
+    expect(hasRollingBall('ember')).toBe(false);
+  });
+
+  it('les garde tous dans le catalogue, « aucune » en tête', () => {
+    expect(SCALE_ANIMATIONS[0].value).toBe('none');
+    expect(SCALE_ANIMATIONS.map((choice) => choice.value)).toEqual([
+      'none',
+      'gauge',
+      'ember',
+      'heat',
+      'energy',
+      'molten'
+    ]);
+  });
+
+  it('les reconnaît quand ils reviennent de la base', () => {
+    // Ils y sont écrits en clair : un style qui ne se relit pas rendrait
+    // « aucune » à un formulaire déjà publié animé.
+    expect(scaleAnimation('heat')).toBe('heat');
+    expect(scaleAnimation('energy')).toBe('energy');
+    expect(scaleAnimation('molten')).toBe('molten');
+  });
+});
+
+describe('les trois rampes', () => {
+  it('partagent le rythme de l’échelle thermique', () => {
+    // Le cyan tenu jusqu'à mi-échelle, un virage au milieu, un dernier
+    // cinquième qui bascule. C'est ce qui fait lire six styles comme un seul
+    // système : le rythme est commun, seule la destination change.
+    const cyan = heatColor(0);
+    expect(energyColor(0.5)).toBe(cyan);
+    expect(moltenColor(0.5)).toBe(cyan);
+    expect(energyColor(0.25)).toBe(cyan);
+  });
+
+  it('divergent au-dessus de la moitié', () => {
+    // Sans quoi les trois styles auraient la même couleur et ne se
+    // distingueraient que par le bruit qu'ils font.
+    expect(energyColor(0.9)).not.toBe(heatColor(0.9));
+    expect(moltenColor(0.7)).not.toBe(heatColor(0.7));
+  });
+
+  it('font suivre le dégradé au style demandé', () => {
+    // Sous la mi-échelle, la jauge est d'un seul ton : un dégradé du cyan vers
+    // le cyan est un calcul pour rien.
+    expect(scaleGradient('energy', 0.3)).toBe(energyColor(0));
+    expect(scaleGradient('molten', 1)).toContain('linear-gradient');
+    expect(scaleGradient('heat', 1)).toBe(gaugeGradient(1));
+  });
+});
+
+describe('la bille roule vraiment', () => {
+  it('tourne de l’arc parcouru, divisé par son rayon', () => {
+    // La rotation dit une chose vraie — la distance déplacée. Une valeur
+    // arbitraire ferait tourner une bille qui glisse.
+    const track = 314;
+    const expected = (track / (BALL_SIZE / 2)) * (180 / Math.PI);
+    expect(rollDegrees(1, track)).toBeCloseTo(expected, 6);
+  });
+
+  it('revient en arrière au lieu de repartir de zéro', () => {
+    expect(rollDegrees(-0.4, 200)).toBeCloseTo(-rollDegrees(0.4, 200), 6);
+    expect(rollDegrees(0, 200)).toBe(0);
+  });
+
+  it('n’étire l’orbe que sur un geste large, et jamais au-delà du raisonnable', () => {
+    expect(stretchFor(0)).toBe(1);
+    expect(stretchFor(-80)).toBe(stretchFor(80)); // le sens ne change pas l'ampleur
+    expect(stretchFor(10000)).toBe(1.2);
+  });
+});
+
+describe('les seuils des effets', () => {
+  it('ne dessinent rien pour les styles sans bille', () => {
+    for (const style of ['none', 'gauge', 'ember'] as const) {
+      expect(Object.values(scaleEffects(style, 1))).toEqual([false, false, false, false, false]);
+    }
+  });
+
+  it('n’allument les braises qu’à partir de sept sur dix', () => {
+    // Le moment où la réponse cesse d'être tiède. En dessous, une note
+    // moyenne recevrait la même fête qu'une note haute.
+    expect(scaleEffects('heat', 0.6).particles).toBe(false);
+    expect(scaleEffects('heat', 0.7).particles).toBe(true);
+    expect(scaleEffects('molten', 0.7).particles).toBe(true);
+  });
+
+  it('réserve chaque effet à son style', () => {
+    expect(scaleEffects('heat', 1).flame).toBe(true);
+    expect(scaleEffects('molten', 1).flame).toBe(false);
+    expect(scaleEffects('energy', 1).flame).toBe(false);
+
+    expect(scaleEffects('energy', 0.5).ring).toBe(true);
+    expect(scaleEffects('energy', 0.4).ring).toBe(false);
+    expect(scaleEffects('heat', 1).ring).toBe(false);
+
+    expect(scaleEffects('energy', 0.7).arc).toBe(true);
+    expect(scaleEffects('energy', 0.6).arc).toBe(false);
+
+    // Un liquide ondule quand on le déplace, même froid : c'est l'onde qui dit
+    // que la matière a de l'inertie, pas la température.
+    expect(scaleEffects('molten', 0).wave).toBe(true);
+    expect(scaleEffects('heat', 1).wave).toBe(false);
+  });
+
+  it('n’enflamme la jauge que dans le dernier dixième', () => {
+    expect(scaleEffects('heat', 0.89).flame).toBe(false);
+    expect(scaleEffects('heat', 0.9).flame).toBe(true);
+  });
+});
+
+describe('l’envol du sommet', () => {
+  it('salue le passage, pas le séjour', () => {
+    // Rester à 10 ne le rejoue pas : un geste répété en boucle cesse d'être un
+    // geste. Redescendre puis remonter le rejoue.
+    expect(crowns(9, 10, 10)).toBe(true);
+    expect(crowns(10, 10, 10)).toBe(false);
+    expect(crowns(10, 9, 10)).toBe(false);
+    expect(crowns(0, 10, 10)).toBe(true);
+  });
+});
+
+
+describe('le chemin entre deux couleurs', () => {
+  /** L'ecart entre le canal le plus fort et le plus faible : la vivacite. */
+  function chroma(colour: string): number {
+    const channels = colour.match(/\d+/g)!.map(Number);
+    return Math.max(...channels) - Math.min(...channels);
+  }
+
+  it('garde sa vivacite au milieu, au lieu de virer au gris', () => {
+    // Le defaut que ce test empeche de revenir : en sRGB, la moyenne du cyan et
+    // de l'ambre est un olive delave. La jauge d'un 10 sur 10 avait un ventre
+    // sale a mi-parcours, exactement la ou l'oeil se pose. Ajouter des arrets
+    // ne corrigeait rien : le gris revenait entre chaque paire.
+    // En ligne droite dans l'espace sRGB, ce point valait 22 : un olive de
+    // vase. Le seuil est pose loin en dessous de ce qu'on obtient, pour
+    // attraper une regression sans se casser sur un arrondi.
+    expect(chroma(heatColor(0.65))).toBeGreaterThan(80);
+    expect(chroma(energyColor(0.65))).toBeGreaterThan(80);
+    expect(chroma(moltenColor(0.65))).toBeGreaterThan(80);
+    expect(chroma(starColor(0.3))).toBeGreaterThan(80);
+  });
+
+  it('rend les bornes exactement telles quelles', () => {
+    // Un aller-retour par un espace perceptif arrondit : une couleur de la
+    // charte doit rester la couleur de la charte, au canal pres.
+    expect(heatColor(0)).toBe('rgb(42, 194, 222)');
+    expect(heatColor(1)).toBe('rgb(225, 74, 38)');
+    expect(moltenColor(0)).toBe('rgb(42, 194, 222)');
   });
 });

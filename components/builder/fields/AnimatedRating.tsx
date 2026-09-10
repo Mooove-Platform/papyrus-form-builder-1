@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Star } from 'lucide-react';
 
 import {
@@ -14,6 +14,7 @@ import {
   starColor,
   type RatingAnimation
 } from '@/lib/field-animation';
+import { usePrefersReducedMotion } from '@/lib/hooks/usePrefersReducedMotion';
 import { cn } from '@/lib/utils';
 
 /**
@@ -49,7 +50,7 @@ interface Props {
 
 export function AnimatedRating({ max, preview, value, onChange, style, labelFor }: Props) {
   const animation = ratingAnimation(style);
-  const reduced = useReducedMotion();
+  const reduced = usePrefersReducedMotion();
 
   const [hover, setHover] = useState(0);
   const [localValue, setLocalValue] = useState(0);
