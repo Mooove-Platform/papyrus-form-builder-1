@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { decryptSecret } from '@/lib/crypto';
 import { getAllSubmissions, getForm, parseFormId, TallyApiError } from '@/lib/tally/client';
-import { convertForm, convertSubmissions } from '@/lib/tally/convert';
+import { absorbOrphanQuestions, convertForm, convertSubmissions } from '@/lib/tally/convert';
+import { mirrorTallyImages } from '@/lib/tally/media';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveDestinationProject } from '@/lib/projects/destination';
 import { uniqueSlug } from '@/lib/utils';
@@ -163,8 +164,12 @@ export async function POST(request: Request) {
         created_by: user.id,
         title: detail.name || 'Formulaire importé de Tally',
         slug: uniqueSlug(detail.name || 'formulaire-tally'),
-        description: 'Importé depuis Tally',
-        display_mode: 'sections',
+        // Pas de description inventée : « Importé depuis Tally » s'affichait
+        // sous le titre de la page publique, où le répondant n'a que faire de
+        // savoir d'où vient le formulaire. La provenance est journalisée dans
+        // `tally_imports`, à sa place.
+        description: '',
+        display_mode: 'scroll',
         status: 'draft',
         access_type: 'public',
         languages: ['fr'],
@@ -176,9 +181,50 @@ export async function POST(request: Request) {
     if (formError || !form) throw formError ?? new Error('form_insert_failed');
     createdFormId = form.id;
 
-    // 3. Convertir et insérer les champs.
+    // 3. Convertir le formulaire.
     const converted = convertForm(detail, form.id);
+
+    /**
+     * Les réponses arrivent AVANT l'écriture des champs, et c'est l'ordre qui
+     * compte.
+     *
+     * Un formulaire Tally vivant perd des questions en route — on le traduit,
+     * on le reformule — et Tally garde les réponses d'avant sous des questions
+     * dont le bloc a disparu. Elles ne se découvrent qu'en lisant les réponses.
+     * Insérer les champs d'abord condamnait donc près de la moitié des réponses
+     * de cet espace à n'avoir aucun champ où atterrir.
+     */
+    const { pages, truncated } = importResponses
+      ? await getAllSubmissions(apiKey, tallyFormId)
+      : { pages: [], truncated: false };
+
+    if (truncated) {
+      warnings.push(
+        'Import limité aux 5 000 réponses les plus récentes. Relancez un import pour la suite si nécessaire.'
+      );
+    }
+
+    if (pages.length > 0) absorbOrphanQuestions(converted, pages, form.id);
+
+    // Les images passent par notre stockage : la politique de sécurité de la
+    // page n'en accepte pas d'ailleurs, et une image restée chez Tally
+    // disparaîtrait le jour où le formulaire d'origine est supprimé.
+    await mirrorTallyImages(converted.fields, converted.warnings);
+
     warnings.push(...converted.warnings);
+
+    // Ce que la conversion seule pouvait apprendre : Tally ne pagine que sur un
+    // saut de page explicite, et sa page de remerciement est du contenu, pas
+    // une section. Les deux se posent après coup, la coquille ayant dû exister
+    // d'abord pour donner son identifiant aux champs.
+    const shape: Record<string, unknown> = { display_mode: converted.displayMode };
+    if (converted.thankYou) {
+      shape.confirmation_config = {
+        title: { fr: converted.thankYou.title },
+        message: { fr: converted.thankYou.message }
+      };
+    }
+    await admin.from('forms').update(shape).eq('id', form.id);
 
     // Les sections partent d'abord : les champs y font référence, et
     // `fields.section_id` est `not null`.
@@ -221,14 +267,7 @@ export async function POST(request: Request) {
     let responsesImported = 0;
 
     if (importResponses) {
-      const { pages, truncated } = await getAllSubmissions(apiKey, tallyFormId);
-      if (truncated) {
-        warnings.push(
-          'Import limité aux 5 000 réponses les plus récentes. Relancez un import pour la suite si nécessaire.'
-        );
-      }
-
-      const submissions = convertSubmissions(pages, converted.fieldIdByTallyId, converted.fields);
+      const submissions = convertSubmissions(pages, converted);
 
       if (submissions.length > 0) {
         // Par lots : une insertion de plusieurs milliers de lignes d'un coup
