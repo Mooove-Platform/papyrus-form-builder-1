@@ -279,10 +279,21 @@ export function convertForm(detail: TallyFormDetail, formId: string): ConvertedF
     "La logique conditionnelle Tally n'est pas transférable automatiquement : reconstruisez-la dans l'onglet Logique."
   );
 
-  // Une section d'ouverture restée vide n'apporte rien : elle afficherait une
-  // page sans titre ni question au répondant.
-  const usedSections = sections.filter(
-    (section, index) => index === 0 || fields.some((field) => field.section_id === section.id)
+  // Une section restée vide n'apporte rien : en mode « une section = une page »,
+  // elle afficherait au répondant une page sans titre ni question.
+  //
+  // Le tri disait `index === 0 || …`, ce qui gardait justement l'ouverture vide
+  // que le commentaire promettait d'écarter — et un formulaire Tally qui
+  // commence par un titre en produit toujours une. Résultat : une première page
+  // blanche en tête de chaque import.
+  //
+  // On en garde une, et une seule, quand il ne reste rien : `fields.section_id`
+  // n'admet pas de vide, et un formulaire sans question doit rester ouvrable.
+  const withFields = sections.filter((section) =>
+    fields.some((field) => field.section_id === section.id)
+  );
+  const usedSections = (withFields.length > 0 ? withFields : sections.slice(0, 1)).map(
+    (section, index) => ({ ...section, section_order: index })
   );
 
   return {

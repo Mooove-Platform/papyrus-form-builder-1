@@ -5,6 +5,7 @@ import { decryptSecret } from '@/lib/crypto';
 import { getAllSubmissions, getForm, parseFormId, TallyApiError } from '@/lib/tally/client';
 import { convertForm, convertSubmissions } from '@/lib/tally/convert';
 import { rateLimit } from '@/lib/rate-limit';
+import { resolveDestinationProject } from '@/lib/projects/destination';
 import { uniqueSlug } from '@/lib/utils';
 import type { TallyImportResult } from '@/lib/tally/types';
 
@@ -25,6 +26,31 @@ export const maxDuration = 120;
  * conversion échoue après création du formulaire, celui-ci est supprimé pour ne
  * pas laisser de coquille vide dans la liste.
  */
+
+/**
+ * Ce qu'on écrit dans le journal d'import quand ça casse.
+ *
+ * **Une erreur Postgres n'est pas une `Error`.** PostgREST renvoie un objet nu
+ * — `{ message, details, hint, code }` — que `instanceof Error` rejette. Le
+ * journal écrivait donc « unknown » précisément dans le cas qui se produisait,
+ * et l'enquête devait passer par les journaux du conteneur. La cause est
+ * gardée ici ; l'écran, lui, ne reçoit toujours qu'une phrase, parce qu'une
+ * erreur Postgres n'est pas une chose à montrer à quelqu'un.
+ */
+function describeFailure(error: unknown): string {
+  if (error instanceof Error) return error.message.slice(0, 500);
+
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    const parts = ['code', 'message', 'details']
+      .map((key) => (typeof record[key] === 'string' ? (record[key] as string) : null))
+      .filter((part): part is string => Boolean(part));
+    if (parts.length > 0) return parts.join(' · ').slice(0, 500);
+  }
+
+  if (typeof error === 'string') return error.slice(0, 500);
+  return 'unknown';
+}
 
 const BodySchema = z.object({
   teamId: z.string().uuid(),
@@ -121,10 +147,19 @@ export async function POST(request: Request) {
     const detail = await getForm(apiKey, tallyFormId);
 
     // 2. Créer la coquille Papyrus pour disposer d'un identifiant de formulaire.
+    //
+    // `project_id` n'est pas facultatif : la contrainte `forms_project_required`
+    // refuse tout formulaire réel sans projet depuis la migration 003. Cette
+    // route l'omettait, et n'a donc jamais importé un seul formulaire — l'échec
+    // arrivait à l'insertion, à vingt lignes de l'oubli, et le message rendu à
+    // l'écran ne disait que « l'import a échoué ».
+    const projectId = await resolveDestinationProject(admin, teamId, user.id);
+
     const { data: form, error: formError } = await admin
       .from('forms')
       .insert({
         team_id: teamId,
+        project_id: projectId,
         created_by: user.id,
         title: detail.name || 'Formulaire importé de Tally',
         slug: uniqueSlug(detail.name || 'formulaire-tally'),
@@ -257,7 +292,7 @@ export async function POST(request: Request) {
       tally_form_id: tallyFormId,
       imported_by: user.id,
       status: 'failed',
-      error_message: error instanceof Error ? error.message.slice(0, 500) : 'unknown'
+      error_message: describeFailure(error)
     });
 
     if (error instanceof TallyApiError) {

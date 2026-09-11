@@ -14,6 +14,7 @@ import type {
 } from '@/types';
 import { createClient } from '@/lib/supabase/client';
 import { normalizeProjectPricing } from '@/lib/store/projects';
+import { resolveDestinationProject } from '@/lib/projects/destination';
 import { uniqueSlug } from '@/lib/utils';
 
 function uuid(): string {
@@ -162,36 +163,10 @@ async function resolveProjectId(
   userId: string,
   customProjectId?: string
 ): Promise<string> {
-  if (customProjectId) return customProjectId;
-
-  const { data: existing, error } = await supabase
-    .from('projects')
-    .select('id')
-    .eq('team_id', teamId)
-    .eq('status', 'active')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.error('Error resolving project:', error);
-    throw new Error("Impossible de déterminer le projet de destination.");
-  }
-
-  if (existing?.id) return existing.id as string;
-
-  const { data: created, error: createError } = await supabase
-    .from('projects')
-    .insert({ team_id: teamId, created_by: userId, name: 'Mes formulaires' })
-    .select('id')
-    .single();
-
-  if (createError) {
-    console.error('Error creating default project:', createError);
-    throw new Error("Impossible de créer un projet pour ce formulaire.");
-  }
-
-  return created.id as string;
+  // La règle elle-même vit dans `lib/projects/destination.ts`, hors de ce
+  // module `'use client'` : une route serveur en a besoin aussi, et l'import
+  // Tally s'en est passé assez longtemps pour n'avoir jamais rien importé.
+  return resolveDestinationProject(supabase, teamId, userId, customProjectId);
 }
 
 /** Liste tous les formulaires triés par updated_at desc. */
